@@ -1,6 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 fastapi>=0.110.0
 uvicorn>=0.27.0
-timesfm>=1.0.0
+timesfm[torch]>=1.0.0
 requests>=2.31.0
 pandas>=2.0.0
 numpy>=1.24.0

@@ -47,7 +47,13 @@ def extract_condition_id(url: str) -> str | None:
 
 
 def _resolve_event_slug(event_slug: str) -> str | None:
-    """Resolve an event slug to a condition_id via Polymarket gamma API."""
+    """Resolve an event slug to a condition_id via Polymarket gamma API.
+
+    Tries two endpoints:
+    1. /markets?slug= — works when the slug is a direct market slug
+    2. /events?slug=  — works when the slug is an event (parent) slug
+    """
+    # 1. Try as a direct market slug
     try:
         resp = requests.get(
             "https://gamma-api.polymarket.com/markets",
@@ -60,6 +66,23 @@ def _resolve_event_slug(event_slug: str) -> str | None:
                 return markets[0].get("conditionId")
     except requests.RequestException:
         pass
+
+    # 2. Try as an event slug — event pages list multiple child markets
+    try:
+        resp = requests.get(
+            "https://gamma-api.polymarket.com/events",
+            params={"slug": event_slug},
+            timeout=10
+        )
+        if resp.ok:
+            events = resp.json()
+            if isinstance(events, list) and events:
+                child_markets = events[0].get("markets", [])
+                if child_markets:
+                    return child_markets[0].get("conditionId")
+    except requests.RequestException:
+        pass
+
     return None
 
 
