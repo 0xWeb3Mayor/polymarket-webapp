@@ -149,6 +149,23 @@ def fetch_markets() -> list[dict]:
     return markets
 
 
+def _fetch_clob_history(token_id: str, params: dict) -> list | None:
+    """Call CLOB prices-history with given params; return history list or None."""
+    try:
+        resp = requests.get(
+            f"{config.API_BASE}/prices-history",
+            params={"market": token_id, **params},
+            timeout=10,
+        )
+        if not resp.ok:
+            print(f"  [WARN] CLOB prices-history returned {resp.status_code} for token {token_id[:20]}...")
+            return None
+        return resp.json().get("history") or None
+    except requests.RequestException as e:
+        print(f"  [WARN] CLOB prices-history request failed: {e}")
+        return None
+
+
 def fetch_price_history(condition_id: str, token_id: str) -> list[dict]:
     """Return cached hourly price history or fetch from API."""
     min_points = config.MIN_HISTORY_DAYS * 24
@@ -166,24 +183,24 @@ def fetch_price_history(condition_id: str, token_id: str) -> list[dict]:
     end_ts = int(time.time())
     start_ts = end_ts - config.HISTORY_DAYS * 86400
 
-    try:
-        resp = requests.get(
-            f"{config.API_BASE}/prices-history",
-            params={"market": token_id, "startTs": start_ts, "endTs": end_ts, "fidelity": 60},
-            timeout=10
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException as e:
-        print(f"  [WARN] Failed to fetch price history for {condition_id}: {e}")
-        return []
+    # Primary: timestamp-range request (30 days, hourly)
+    history = _fetch_clob_history(token_id, {"startTs": start_ts, "endTs": end_ts, "fidelity": 60})
 
-    history = data.get("history", [])
-    if len(history) < min_points:
+    # Fallback: let CLOB return whatever it has (handles new markets / 400 on timestamp range)
+    if not history:
+        history = _fetch_clob_history(token_id, {"interval": "max", "fidelity": 60})
+
+    if not history:
+        print(f"  [WARN] No price history available for {condition_id}")
         return []
 
     entries = [{"timestamp": int(h["t"]), "price": float(h["p"]), "volume": 0.0}
                for h in history]
+
+    # Need at least 24 data points for a meaningful TimesFM forecast
+    if len(entries) < 24:
+        print(f"  [WARN] Only {len(entries)} history points for {condition_id} (need 24+)")
+        return []
 
     conn = sqlite3.connect(DB_PATH)
     conn.executemany(

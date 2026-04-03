@@ -6,7 +6,7 @@ API_RATE_LIMIT_PER_MIN = 100
 
 # Market filters
 MIN_LIQUIDITY = 5_000       # USD
-MIN_HISTORY_DAYS = 14       # days of hourly data required
+MIN_HISTORY_DAYS = 3        # days of hourly data required
 MIN_VOLUME_24H = 500        # USD
 PRICE_MIN = 0.05
 PRICE_MAX = 0.95

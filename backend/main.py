@@ -42,6 +42,16 @@ def _get_market_from_db(condition_id: str) -> dict | None:
     return dict(zip(_MARKET_COLS, row)) if row else None
 
 
+def _best_token(tokens: list) -> dict | None:
+    """Return YES token for binary markets; highest-priced token for multi-outcome."""
+    for t in tokens:
+        if t.get("outcome", "").lower() == "yes":
+            return t
+    if tokens:
+        return max(tokens, key=lambda t: float(t.get("price", 0) or 0))
+    return None
+
+
 def _fetch_market_by_id(condition_id: str) -> dict | None:
     """Fetch a single market directly from Polymarket API by condition_id."""
     try:
@@ -51,19 +61,19 @@ def _fetch_market_by_id(condition_id: str) -> dict | None:
         if not resp.ok:
             return None
         data = resp.json()
-        # Try YES token first; fall back to first token for multi-outcome markets
-        token_id = fetch._get_yes_token_id(data)
-        if not token_id:
-            tokens = data.get("tokens", [])
-            token_id = tokens[0]["token_id"] if tokens else None
-        if not token_id:
+        token = _best_token(data.get("tokens", []))
+        if not token:
             return None
+        token_id = token["token_id"]
+        # Use token-level price when available (more accurate for multi-outcome)
+        last_price = float(token.get("price") or data.get("last_trade_price") or 0)
         return {
             "condition_id": condition_id,
             "question": data.get("question", ""),
+            "outcome": token.get("outcome", "YES"),
             "token_id": token_id,
             "close_time": int(data.get("close_time") or 0),
-            "last_price": float(data.get("last_trade_price") or 0),
+            "last_price": last_price,
             "volume_24h": float(data.get("volume24hr") or 0),
             "liquidity": float(data.get("liquidity") or 0),
             "fetched_at": int(time.time()),
@@ -78,7 +88,7 @@ def _build_forecast_response(market: dict, horizon: int) -> dict:
     if not history:
         raise HTTPException(
             status_code=422,
-            detail="Insufficient price history for this market (need 14+ days)"
+            detail="Not enough price history for this market — it may be too new or have low trading activity (need 24+ hours of data)"
         )
 
     price_series = [h["price"] for h in history]
@@ -109,6 +119,7 @@ def _build_forecast_response(market: dict, horizon: int) -> dict:
     return {
         "condition_id": market["condition_id"],
         "question": market["question"],
+        "outcome": market.get("outcome", "YES"),
         "last_price": last_price,
         "close_time": market["close_time"],
         "volume_24h": market["volume_24h"],
