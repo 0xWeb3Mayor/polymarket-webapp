@@ -16,6 +16,9 @@ def extract_condition_id(url: str) -> str | None:
 
     url = url.strip()
 
+    # Strip hash fragment
+    url = url.split('#')[0]
+
     # Format 1: raw condition_id (0x + hex chars)
     if re.match(r'^0x[a-fA-F0-9]+$', url):
         return url
@@ -25,17 +28,38 @@ def extract_condition_id(url: str) -> str | None:
     if m:
         return m.group(1)
 
-    # Format 3: /event/{slug}/{market-slug}
-    # Check if the market-slug itself is a condition_id
+    # Format 3: /event/{slug}/{market-slug} where market-slug is a condition_id
     m = re.search(r'/event/[^/]+/(0x[a-fA-F0-9]+)', url)
     if m:
         return m.group(1)
 
-    # Format 3b: /event/{slug}/{text-slug} — resolve via API
+    # Format 4: /event/{slug}/{text-slug} — resolve second slug via API
     m = re.search(r'polymarket\.com/event/[^/]+/([^/?#]+)', url)
     if m:
         return _resolve_slug(m.group(1))
 
+    # Format 5: /event/{single-slug} — resolve event slug via gamma API
+    m = re.search(r'polymarket\.com/event/([^/?#]+)/?$', url)
+    if m:
+        return _resolve_event_slug(m.group(1))
+
+    return None
+
+
+def _resolve_event_slug(event_slug: str) -> str | None:
+    """Resolve an event slug to a condition_id via Polymarket gamma API."""
+    try:
+        resp = requests.get(
+            "https://gamma-api.polymarket.com/markets",
+            params={"slug": event_slug},
+            timeout=10
+        )
+        if resp.ok:
+            markets = resp.json()
+            if isinstance(markets, list) and markets:
+                return markets[0].get("conditionId")
+    except requests.RequestException:
+        pass
     return None
 
 
