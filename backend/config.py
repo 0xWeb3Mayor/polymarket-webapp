@@ -25,6 +25,6 @@ TOP_N_SIGNALS = 5
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "db", "scanner.db")
+DB_PATH = "/data/scanner.db"
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 CHARTS_DIR = os.path.join(OUTPUT_DIR, "charts")
