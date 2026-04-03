@@ -51,7 +51,11 @@ def _fetch_market_by_id(condition_id: str) -> dict | None:
         if not resp.ok:
             return None
         data = resp.json()
+        # Try YES token first; fall back to first token for multi-outcome markets
         token_id = fetch._get_yes_token_id(data)
+        if not token_id:
+            tokens = data.get("tokens", [])
+            token_id = tokens[0]["token_id"] if tokens else None
         if not token_id:
             return None
         return {
