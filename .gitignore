@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/db/*.db
+backend/db/*.sqlite
+
+# Node
+node_modules/
+.next/
+frontend/.env.local
+
+# Misc
+.DS_Store
