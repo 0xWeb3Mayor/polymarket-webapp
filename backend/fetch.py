@@ -149,25 +149,55 @@ def fetch_markets() -> list[dict]:
     return markets
 
 
-def _fetch_clob_history(token_id: str, params: dict) -> list | None:
-    """Call CLOB prices-history with given params; return history list or None."""
+GAMMA_API = "https://gamma-api.polymarket.com"
+
+
+def _fetch_gamma_history(condition_id: str) -> list | None:
+    """Fetch price history from Gamma API using conditionId.
+
+    Gamma covers ALL Polymarket markets (AMM + CLOB).
+    CLOB prices-history only has data for orderbook-traded markets.
+    """
+    for interval in ("max", "1m", "1w"):
+        try:
+            resp = requests.get(
+                f"{GAMMA_API}/prices-history",
+                params={"market": condition_id, "interval": interval, "fidelity": 60},
+                timeout=10,
+            )
+            if resp.ok:
+                data = resp.json().get("history")
+                if data:
+                    print(f"  [INFO] Gamma prices-history: {len(data)} points (interval={interval})")
+                    return data
+        except requests.RequestException:
+            pass
+    return None
+
+
+def _fetch_clob_history(token_id: str) -> list | None:
+    """Call CLOB prices-history; returns data only for CLOB orderbook markets."""
     try:
         resp = requests.get(
             f"{config.API_BASE}/prices-history",
-            params={"market": token_id, **params},
+            params={"market": token_id, "interval": "max", "fidelity": 60},
             timeout=10,
         )
-        if not resp.ok:
-            print(f"  [WARN] CLOB prices-history returned {resp.status_code} for token {token_id[:20]}...")
-            return None
-        return resp.json().get("history") or None
+        if resp.ok:
+            return resp.json().get("history") or None
+        print(f"  [WARN] CLOB prices-history returned {resp.status_code} for token {token_id[:20]}...")
     except requests.RequestException as e:
-        print(f"  [WARN] CLOB prices-history request failed: {e}")
-        return None
+        print(f"  [WARN] CLOB prices-history failed: {e}")
+    return None
 
 
 def fetch_price_history(condition_id: str, token_id: str) -> list[dict]:
-    """Return cached hourly price history or fetch from API."""
+    """Return cached hourly price history or fetch from API.
+
+    Strategy:
+    1. Gamma API (conditionId) — covers all markets, AMM + CLOB
+    2. CLOB API (token_id) — fallback for high-liquidity CLOB-only markets
+    """
     min_points = config.MIN_HISTORY_DAYS * 24
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.execute(
@@ -180,15 +210,13 @@ def fetch_price_history(condition_id: str, token_id: str) -> list[dict]:
     if rows and _is_cache_fresh(rows[-1][0]) and len(rows) >= min_points:
         return [{"timestamp": r[0], "price": r[1], "volume": r[2]} for r in rows]
 
-    end_ts = int(time.time())
-    start_ts = end_ts - config.HISTORY_DAYS * 86400
+    # 1. Try Gamma API first — works for all market types
+    history = _fetch_gamma_history(condition_id)
 
-    # Primary: timestamp-range request (30 days, hourly)
-    history = _fetch_clob_history(token_id, {"startTs": start_ts, "endTs": end_ts, "fidelity": 60})
-
-    # Fallback: let CLOB return whatever it has (handles new markets / 400 on timestamp range)
+    # 2. Fallback to CLOB for high-liquidity orderbook markets
     if not history:
-        history = _fetch_clob_history(token_id, {"interval": "max", "fidelity": 60})
+        print(f"  [INFO] Gamma returned no history for {condition_id}, trying CLOB...")
+        history = _fetch_clob_history(token_id)
 
     if not history:
         print(f"  [WARN] No price history available for {condition_id}")
