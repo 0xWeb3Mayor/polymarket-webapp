@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { MarketResult, buildChartData, getMarket } from '@/lib/api'
+import { AIReport } from '@/components/AIReport'
 import { SignalCard } from '@/components/SignalCard'
 import { HorizonToggle } from '@/components/HorizonToggle'
 import { ShareButton } from '@/components/ShareButton'
@@ -116,6 +117,9 @@ export default function MarketView({ conditionId, initial }: Props) {
           />
         )}
       </div>
+
+      {/* AI Report */}
+      {market.report && <AIReport report={market.report} />}
 
       {/* Actions */}
       <div className="flex items-center justify-between pt-2">

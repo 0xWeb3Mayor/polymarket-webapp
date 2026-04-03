@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import config
 import fetch
 import forecast as fc_module
+import report as report_module
 import signals as sig_module
 from parser import extract_condition_id
 
@@ -116,6 +117,16 @@ def _build_forecast_response(market: dict, horizon: int) -> dict:
     conn.commit()
     conn.close()
 
+    ai_report = report_module.generate_report(
+        market={**market, "outcome": market.get("outcome", "YES")},
+        forecast={
+            "forecast_price": forecast_result["forecast_price"],
+            "horizon_hours": horizon,
+            "divergence_pct": divergence_pct,
+            "signal": signal,
+        },
+    )
+
     return {
         "condition_id": market["condition_id"],
         "question": market["question"],
@@ -137,6 +148,7 @@ def _build_forecast_response(market: dict, horizon: int) -> dict:
             {"timestamp": h["timestamp"], "price": h["price"]}
             for h in history[-336:]  # last 14 days for chart
         ],
+        "report": ai_report,
     }
 
 

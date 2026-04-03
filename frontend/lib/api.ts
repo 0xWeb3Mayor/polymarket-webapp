@@ -17,15 +17,29 @@ export interface Forecast {
   run_at: number
 }
 
+export interface AIReport {
+  what_it_asks: string
+  resolution_criteria: string
+  key_factors: string[]
+  probability_yes: number
+  probability_no: number
+  vs_market: string
+  mispricing: string
+  action: string
+  reasoning: string
+}
+
 export interface MarketResult {
   condition_id: string
   question: string
+  outcome: string
   last_price: number
   close_time: number
   volume_24h: number
   liquidity: number
   forecast: Forecast
   price_history: PricePoint[]
+  report: AIReport | null
 }
 
 export interface AnalyzeResponse {
