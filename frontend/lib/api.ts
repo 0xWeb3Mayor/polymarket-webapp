@@ -181,8 +181,16 @@ export interface AgentLog {
   detail: string | null
 }
 
+export interface ChainBalance {
+  usdc: number
+  usdc_e?: number
+  native: number
+  native_symbol: string
+}
+
 export interface WalletBalance {
   address: string | null
+  chains: Record<string, ChainBalance>
   usdc: number | null
   usdc_e: number | null
   total: number | null

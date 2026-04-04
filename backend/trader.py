@@ -1,43 +1,29 @@
 """
 trader.py — PolyAgent execution layer
 
-Sits between signals.py and the OWS signing SDK.
-Paper trading is the default; set OWS_LIVE=true to route real orders.
+Live mode: set OWS_LIVE=true + PRIVATE_KEY in Railway env vars.
+Paper mode (default): full execution loop with mock tx hash, no real USDC moved.
 """
 
 import hashlib
 import sqlite3
 import time
-import uuid
 import os
 import requests
 
 import config
 
-# ── OWS import (optional — graceful paper-trade fallback) ─────────────────────
-
-try:
-    from ows import WalletClient as _OWSWalletClient
-    _OWS_AVAILABLE = True
-except ImportError:
-    _OWS_AVAILABLE = False
-
 # ── CLOB client (optional — graceful fallback) ────────────────────────────────
 
 try:
     from py_clob_client.client import ClobClient
-    from py_clob_client.clob_types import ApiCreds
+    from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
     _CLOB_AVAILABLE = True
 except ImportError:
     _CLOB_AVAILABLE = False
 
-# ── OWS policy ────────────────────────────────────────────────────────────────
-
-_OWS_POLICY = {
-    "max_spend_per_tx": config.MAX_TRADE_USD,
-    "daily_limit": config.DAILY_LIMIT_USD,
-    "allowed_chains": ["eip155:137"],   # Polygon only
-}
+# OWS is not a real PyPI package — live mode uses PRIVATE_KEY + py-clob-client directly
+_OWS_AVAILABLE = False
 
 # ── Gate logic ────────────────────────────────────────────────────────────────
 
@@ -150,37 +136,44 @@ def build_clob_order(market: dict, side: str, size_usd: float) -> dict:
 
 def _sign_with_ows(order: dict) -> str:
     """
-    Route order through OWS policy engine → returns tx hash.
+    Submit order via Polymarket CLOB using private key (live mode).
     Falls back to a deterministic mock hash in paper trading mode.
     """
-    if config.OWS_LIVE and _OWS_AVAILABLE:
-        client = _OWSWalletClient(
-            wallet_name=config.OWS_WALLET_NAME,
-            password=config.OWS_WALLET_PASSWORD,
-        )
-        signed_tx = client.sign(transaction=order, policy=_OWS_POLICY)
-
-        # Submit signed tx to Polymarket CLOB
-        if _CLOB_AVAILABLE:
-            try:
-                creds = ApiCreds(
+    if config.OWS_LIVE and config.PRIVATE_KEY and _CLOB_AVAILABLE:
+        pk = config.PRIVATE_KEY if config.PRIVATE_KEY.startswith("0x") else "0x" + config.PRIVATE_KEY
+        try:
+            clob = ClobClient(
+                host="https://clob.polymarket.com",
+                key=pk,
+                chain_id=137,
+                signature_type=0,  # EOA
+            )
+            # Derive CLOB API credentials from private key if not set
+            if config.CLOB_API_KEY:
+                clob.set_api_creds(ApiCreds(
                     api_key=config.CLOB_API_KEY,
                     api_secret=config.CLOB_API_SECRET,
                     api_passphrase=config.CLOB_API_PASSPHRASE,
-                )
-                clob = ClobClient(
-                    host="https://clob.polymarket.com",
-                    chain_id=137,
-                    creds=creds,
-                )
-                resp = clob.post_order(signed_tx)
-                return resp.get("transactionHash") or resp.get("orderID") or _mock_hash(order)
-            except Exception as e:
-                print(f"  [WARN] CLOB submit failed: {e}")
-                return _mock_hash(order)
-        return _mock_hash(order)
+                ))
+            else:
+                api_creds = clob.create_or_derive_api_creds()
+                clob.set_api_creds(api_creds)
 
-    # Paper trading — deterministic mock hash so it's reproducible in logs
+            order_args = OrderArgs(
+                token_id=order["token_id"],
+                price=order["price"],
+                size=order["size"],
+                side="BUY",
+            )
+            signed = clob.create_order(order_args)
+            resp = clob.post_order(signed, OrderType.GTC)
+            tx = (resp or {}).get("transactionHash") or (resp or {}).get("orderID")
+            return tx or _mock_hash(order)
+        except Exception as e:
+            print(f"  [WARN] Live CLOB order failed: {e} — falling back to paper hash")
+            return _mock_hash(order)
+
+    # Paper trading — deterministic mock hash
     return _mock_hash(order)
 
 
@@ -225,7 +218,7 @@ def execute_trade(result: dict) -> dict:
     order = build_clob_order(market, side, size_usd)
     entry_price = order["price"]
 
-    is_paper = not (config.OWS_LIVE and _OWS_AVAILABLE)
+    is_paper = not (config.OWS_LIVE and bool(config.PRIVATE_KEY) and _CLOB_AVAILABLE)
     tx_hash = _sign_with_ows(order)
 
     executed_at = int(time.time())

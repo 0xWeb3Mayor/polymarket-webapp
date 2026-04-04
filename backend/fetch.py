@@ -29,71 +29,160 @@ DB_PATH = config.DB_PATH
 
 # ── Wallet balance ────────────────────────────────────────────────────────────
 
-# Multiple public Polygon RPCs — tried in order until one works
-_POLYGON_RPCS = [
-    "https://polygon-rpc.com",
-    "https://rpc.ankr.com/polygon",
-    "https://polygon-bor-rpc.publicnode.com",
-    "https://1rpc.io/matic",
-]
+_CHAIN_FALLBACK_RPCS: dict[str, list[str]] = {
+    "polygon": [
+        "https://polygon-rpc.com",
+        "https://rpc.ankr.com/polygon",
+        "https://polygon-bor-rpc.publicnode.com",
+        "https://1rpc.io/matic",
+    ],
+    "ethereum": [
+        "https://eth.llamarpc.com",
+        "https://rpc.ankr.com/eth",
+        "https://cloudflare-eth.com",
+    ],
+    "base": [
+        "https://mainnet.base.org",
+        "https://rpc.ankr.com/base",
+        "https://base.llamarpc.com",
+    ],
+}
 
 
-def _erc20_balance(contract: str, wallet: str) -> tuple[float, str | None]:
-    """
-    Query ERC-20 balanceOf via Polygon RPC.
-    Returns (balance, error_message). Tries multiple RPCs before giving up.
-    """
+def _rpc_call(rpcs: list[str], payload: dict) -> tuple[str | None, str | None]:
+    """Try RPCs in order. Returns (result_hex, error)."""
+    last_error = None
+    for rpc in rpcs:
+        try:
+            r = requests.post(rpc, json=payload, timeout=8)
+            r.raise_for_status()
+            result = r.json().get("result")
+            if result not in (None, "0x", ""):
+                return result, None
+            return "0x0", None
+        except Exception as e:
+            last_error = f"{rpc}: {e}"
+    return None, f"all RPCs failed — last: {last_error}"
+
+
+def _erc20_balance(contract: str, wallet: str, chain: str) -> tuple[float, str | None]:
+    """Query ERC-20 balanceOf (6 decimals = USDC). Returns (balance, error)."""
     if not wallet:
         return 0.0, "no wallet address configured"
-
     selector = "0x70a08231"
     padded = wallet.lower().replace("0x", "").zfill(64)
+    rpcs = _CHAIN_FALLBACK_RPCS.get(chain, [])
+    # Prepend configured override RPC for polygon
+    if chain == "polygon" and config.POLYGON_RPC not in rpcs:
+        rpcs = [config.POLYGON_RPC] + rpcs
+    elif chain == "ethereum" and config.ETH_RPC not in rpcs:
+        rpcs = [config.ETH_RPC] + rpcs
+    elif chain == "base" and config.BASE_RPC not in rpcs:
+        rpcs = [config.BASE_RPC] + rpcs
     payload = {
         "jsonrpc": "2.0", "method": "eth_call",
         "params": [{"to": contract, "data": selector + padded}, "latest"],
         "id": 1,
     }
+    result, error = _rpc_call(rpcs, payload)
+    if error:
+        return 0.0, error
+    if result in ("0x0", "0x", None):
+        return 0.0, None
+    try:
+        return int(result, 16) / 1_000_000, None
+    except ValueError:
+        return 0.0, f"bad result: {result}"
 
-    rpcs = [config.POLYGON_RPC] + [r for r in _POLYGON_RPCS if r != config.POLYGON_RPC]
-    last_error = None
 
-    for rpc in rpcs:
-        try:
-            r = requests.post(rpc, json=payload, timeout=8)
-            r.raise_for_status()
-            result = r.json().get("result") or "0x0"
-            if result in ("0x", "0x0", "", None):
-                return 0.0, None
-            return int(result, 16) / 1_000_000, None
-        except Exception as e:
-            last_error = f"{rpc}: {e}"
-            continue
-
-    return 0.0, f"all RPCs failed — last: {last_error}"
+def _native_balance_eth(wallet: str, chain: str) -> tuple[float, str | None]:
+    """Query native ETH/MATIC balance. Returns (balance_in_ether, error)."""
+    if not wallet:
+        return 0.0, None
+    rpcs = _CHAIN_FALLBACK_RPCS.get(chain, [])
+    if chain == "ethereum" and config.ETH_RPC not in rpcs:
+        rpcs = [config.ETH_RPC] + rpcs
+    elif chain == "polygon" and config.POLYGON_RPC not in rpcs:
+        rpcs = [config.POLYGON_RPC] + rpcs
+    elif chain == "base" and config.BASE_RPC not in rpcs:
+        rpcs = [config.BASE_RPC] + rpcs
+    payload = {
+        "jsonrpc": "2.0", "method": "eth_getBalance",
+        "params": [wallet, "latest"],
+        "id": 1,
+    }
+    result, error = _rpc_call(rpcs, payload)
+    if error or result in ("0x0", "0x", None):
+        return 0.0, error
+    try:
+        return int(result, 16) / 1e18, None
+    except ValueError:
+        return 0.0, None
 
 
 def get_wallet_balance() -> dict:
-    """Return USDC balance on Polygon for the configured OWS wallet address."""
+    """Return USDC balance across Polygon, Ethereum, and Base for the OWS wallet."""
     address = config.OWS_WALLET_ADDRESS
     if not address:
         return {
-            "address": None, "usdc": None, "usdc_e": None,
-            "total": None, "chain": "polygon", "error": None,
+            "address": None,
+            "chains": {},
+            "usdc": None, "usdc_e": None, "total": None,
+            "chain": "multi",
+            "error": None,
         }
 
-    usdc,   err1 = _erc20_balance(config.USDC_POLYGON,   address)
-    usdc_e, err2 = _erc20_balance(config.USDC_POLYGON_E, address)
-    error = err1 or err2 or None
+    errors = []
 
+    # Polygon
+    p_usdc,   err = _erc20_balance(config.USDC_POLYGON,   address, "polygon")
+    if err: errors.append(f"poly-usdc: {err}")
+    p_usdc_e, err = _erc20_balance(config.USDC_POLYGON_E, address, "polygon")
+    if err: errors.append(f"poly-usdc.e: {err}")
+    p_matic,  _   = _native_balance_eth(address, "polygon")
+
+    # Ethereum mainnet
+    e_usdc, err = _erc20_balance(config.USDC_ETH, address, "ethereum")
+    if err: errors.append(f"eth-usdc: {err}")
+    e_eth,  _   = _native_balance_eth(address, "ethereum")
+
+    # Base
+    b_usdc, err = _erc20_balance(config.USDC_BASE, address, "base")
+    if err: errors.append(f"base-usdc: {err}")
+    b_eth,  _   = _native_balance_eth(address, "base")
+
+    chains = {
+        "polygon": {
+            "usdc":   round(p_usdc,   2),
+            "usdc_e": round(p_usdc_e, 2),
+            "native": round(p_matic,  4),
+            "native_symbol": "MATIC",
+        },
+        "ethereum": {
+            "usdc":   round(e_usdc, 2),
+            "native": round(e_eth,  4),
+            "native_symbol": "ETH",
+        },
+        "base": {
+            "usdc":   round(b_usdc, 2),
+            "native": round(b_eth,  4),
+            "native_symbol": "ETH",
+        },
+    }
+
+    total_usdc = round(p_usdc + p_usdc_e + e_usdc + b_usdc, 2)
+    error = "; ".join(errors) if errors else None
     if error:
-        print(f"  [WARN] Wallet balance fetch failed: {error}")
+        print(f"  [WARN] Wallet balance partial failure: {error}")
 
     return {
         "address": address,
-        "usdc":   round(usdc,   2),
-        "usdc_e": round(usdc_e, 2),
-        "total":  round(usdc + usdc_e, 2),
-        "chain":  "polygon",
+        "chains":  chains,
+        # Legacy fields kept for backwards-compat with old UI code
+        "usdc":   round(p_usdc,   2),
+        "usdc_e": round(p_usdc_e, 2),
+        "total":  total_usdc,
+        "chain":  "multi",
         "error":  error,
     }
 

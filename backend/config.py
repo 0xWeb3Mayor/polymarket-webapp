@@ -49,11 +49,24 @@ DAILY_LIMIT_USD = float(os.environ.get("DAILY_LIMIT_USD", "200"))
 AGENT_MIN_LIQUIDITY = 10_000   # 2x standard filter — needs book depth
 AGENT_SCAN_INTERVAL = int(os.environ.get("AGENT_SCAN_INTERVAL", "900"))  # 15 min default
 
+# Private key for live trading (hex, with or without 0x prefix)
+PRIVATE_KEY = os.environ.get("PRIVATE_KEY", "")
+
 # Wallet balance
 OWS_WALLET_ADDRESS = os.environ.get("OWS_WALLET_ADDRESS", "")
 POLYGON_RPC = os.environ.get("POLYGON_RPC", "https://polygon-rpc.com")
+
+# Polygon USDC contracts
 USDC_POLYGON   = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"  # native USDC
 USDC_POLYGON_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # bridged USDC.e
+
+# Ethereum mainnet
+ETH_RPC = os.environ.get("ETH_RPC", "https://eth.llamarpc.com")
+USDC_ETH = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"        # USDC on Ethereum
+
+# Base
+BASE_RPC = os.environ.get("BASE_RPC", "https://mainnet.base.org")
+USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"       # USDC on Base
 
 # Geopolitics keyword filter (markets matching any keyword are prioritised)
 GEOPOLITICS_KEYWORDS = [

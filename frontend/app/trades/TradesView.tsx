@@ -168,11 +168,11 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
       </div>
 
       {/* Wallet balance */}
-      <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4">
+      <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase">
-              OWS wallet · polygon
+              wallet · all chains
             </div>
             {balance.address ? (
               <a
@@ -189,31 +189,64 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           </div>
           <div className="text-right">
             <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">
-              USDC balance
+              total USDC
             </div>
             <div className="font-mono text-2xl font-bold" style={{ color: balanceColor }}>
               {balance.total !== null ? `$${balance.total.toFixed(2)}` : '—'}
             </div>
-            {balance.total === 0 && balance.address && !balance.error && (
-              <div className="font-mono text-[10px] text-[#475569] mt-0.5">
-                verify on polygonscan ↗
-              </div>
-            )}
-            {balance.usdc_e !== null && balance.usdc_e > 0 && (
-              <div className="font-mono text-[10px] text-[#475569] mt-0.5">
-                native ${balance.usdc?.toFixed(2)} · bridged ${balance.usdc_e.toFixed(2)}
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Per-chain breakdown */}
+        {balance.address && balance.chains && Object.keys(balance.chains).length > 0 && (
+          <div className="grid grid-cols-3 gap-2 border-t border-[#1a1a2e] pt-3">
+            {(['polygon', 'ethereum', 'base'] as const).map(chain => {
+              const c = balance.chains[chain]
+              if (!c) return null
+              const chainTotal = (c.usdc ?? 0) + (c.usdc_e ?? 0)
+              const explorerBase = chain === 'polygon'
+                ? 'https://polygonscan.com/address/'
+                : chain === 'base'
+                ? 'https://basescan.org/address/'
+                : 'https://etherscan.io/address/'
+              return (
+                <a
+                  key={chain}
+                  href={`${explorerBase}${balance.address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-[#111318] border border-[#1a1a2e] rounded p-2 hover:border-[#334155] transition-colors"
+                >
+                  <div className="font-mono text-[9px] text-[#334155] tracking-widest uppercase mb-1">
+                    {chain} ↗
+                  </div>
+                  <div className={`font-mono text-sm font-bold ${chainTotal > 0 ? 'text-[#22c55e]' : 'text-[#475569]'}`}>
+                    ${chainTotal.toFixed(2)}
+                  </div>
+                  {c.usdc_e !== undefined && c.usdc_e > 0 && (
+                    <div className="font-mono text-[9px] text-[#334155] mt-0.5">
+                      +${c.usdc_e.toFixed(2)} bridged
+                    </div>
+                  )}
+                  {c.native > 0 && (
+                    <div className="font-mono text-[9px] text-[#334155]">
+                      {c.native.toFixed(4)} {c.native_symbol}
+                    </div>
+                  )}
+                </a>
+              )
+            })}
+          </div>
+        )}
+
         {balance.address === null && (
-          <div className="mt-3 font-mono text-[10px] text-[#475569] border-t border-[#1a1a2e] pt-3">
+          <div className="font-mono text-[10px] text-[#475569] border-t border-[#1a1a2e] pt-3">
             set OWS_WALLET_ADDRESS in Railway to see balance
           </div>
         )}
         {balance.error && balance.address !== null && (
-          <div className="mt-3 font-mono text-[10px] text-[#f97316] border-t border-[#1a1a2e] pt-3">
-            RPC error · {balance.error.slice(0, 100)}
+          <div className="font-mono text-[10px] text-[#f97316] border-t border-[#1a1a2e] pt-3">
+            RPC partial error · {balance.error.slice(0, 120)}
           </div>
         )}
       </div>
