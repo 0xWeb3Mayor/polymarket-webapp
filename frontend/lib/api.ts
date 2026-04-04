@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_URL    = process.env.NEXT_PUBLIC_API_URL    ?? 'http://localhost:8000'
+const SECRET     = process.env.NEXT_PUBLIC_AGENT_SECRET ?? ''
+const authHeader = SECRET ? { 'x-agent-secret': SECRET } : {}
 
 export type Signal = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL'
 
@@ -144,7 +146,9 @@ export async function getTrade(conditionId: string): Promise<Trade> {
 }
 
 export async function closeTrade(conditionId: string): Promise<Trade> {
-  const res = await fetch(`${API_URL}/trades/${conditionId}/close`, { method: 'POST' })
+  const res = await fetch(`${API_URL}/trades/${conditionId}/close`, {
+    method: 'POST', headers: { ...authHeader },
+  })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? 'Failed to close trade')
@@ -159,7 +163,9 @@ export async function getAgentStatus(): Promise<AgentStatus> {
 }
 
 export async function startAgent(): Promise<{ status: string }> {
-  const res = await fetch(`${API_URL}/agent/start`, { method: 'POST' })
+  const res = await fetch(`${API_URL}/agent/start`, {
+    method: 'POST', headers: { ...authHeader },
+  })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? `Agent start failed (${res.status})`)
@@ -168,14 +174,16 @@ export async function startAgent(): Promise<{ status: string }> {
 }
 
 export async function stopAgent(): Promise<{ status: string }> {
-  const res = await fetch(`${API_URL}/agent/stop`, { method: 'POST' })
+  const res = await fetch(`${API_URL}/agent/stop`, {
+    method: 'POST', headers: { ...authHeader },
+  })
   return res.json().catch(() => ({ status: 'stopped' }))
 }
 
 export async function setAgentMode(live: boolean): Promise<{ live: boolean; status: string }> {
   const res = await fetch(`${API_URL}/agent/mode`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify({ live }),
   })
   return res.json()

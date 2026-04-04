@@ -4,9 +4,15 @@ import time
 from typing import Optional
 
 import requests
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+
+def _require_secret(x_agent_secret: str | None = Header(default=None)):
+    """Dependency — blocks request if AGENT_SECRET is set and header doesn't match."""
+    if config.AGENT_SECRET and x_agent_secret != config.AGENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 import config
 import fetch
@@ -319,8 +325,9 @@ def get_trade(condition_id: str):
 
 
 @app.post("/trades/{condition_id}/close")
-def close_trade(condition_id: str):
+def close_trade(condition_id: str, x_agent_secret: str | None = Header(default=None)):
     """Manually close an open position via OWS."""
+    _require_secret(x_agent_secret)
     result = trader.close_position(condition_id)
     if result is None:
         raise HTTPException(status_code=404, detail="No open position for this market")
@@ -333,8 +340,9 @@ _agent_task: Optional[asyncio.Task] = None
 
 
 @app.post("/agent/start")
-async def start_agent():
+async def start_agent(x_agent_secret: str | None = Header(default=None)):
     """Start the autonomous trading loop."""
+    _require_secret(x_agent_secret)
     global _agent_task
     try:
         import agent as agent_module
@@ -347,8 +355,9 @@ async def start_agent():
 
 
 @app.post("/agent/stop")
-async def stop_agent():
+async def stop_agent(x_agent_secret: str | None = Header(default=None)):
     """Stop the autonomous trading loop."""
+    _require_secret(x_agent_secret)
     global _agent_task
     try:
         import agent as agent_module
@@ -375,8 +384,9 @@ class ModeRequest(BaseModel):
     live: bool
 
 @app.post("/agent/mode")
-async def set_agent_mode(req: ModeRequest):
+async def set_agent_mode(req: ModeRequest, x_agent_secret: str | None = Header(default=None)):
     """Toggle between live and paper trading without redeploying."""
+    _require_secret(x_agent_secret)
     if req.live and not config.PRIVATE_KEY:
         return {"error": "PRIVATE_KEY not set — cannot enable live mode"}
     trader.set_live_mode(req.live)

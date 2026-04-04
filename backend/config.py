@@ -1,5 +1,8 @@
 import os
 
+# Agent control secret — set AGENT_SECRET in Railway to lock down control endpoints
+AGENT_SECRET = os.environ.get("AGENT_SECRET", "")
+
 # API
 API_BASE = "https://clob.polymarket.com"
 API_RATE_LIMIT_PER_MIN = 100
