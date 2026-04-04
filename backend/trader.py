@@ -45,7 +45,8 @@ def should_execute(result: dict) -> bool:
     """
     Return True only when ALL gate conditions are met:
     1. Signal is STRONG_BUY or STRONG_SELL
-    2. Claude report action agrees with signal direction
+    2. Claude does NOT explicitly say the opposite direction
+       (HOLD = uncertainty, allowed through. Only hard disagree blocks.)
     3. Market liquidity > $10,000
     4. No open position already exists for this condition_id
     """
@@ -53,13 +54,18 @@ def should_execute(result: dict) -> bool:
     if signal not in ("STRONG_BUY", "STRONG_SELL"):
         return False
 
-    # Claude confirmation
+    # Claude veto — only block on explicit opposite direction, not HOLD
     report = result.get("report") or {}
-    action = (report.get("action") or "").upper()
-    if signal == "STRONG_BUY" and "BUY YES" not in action:
-        return False
-    if signal == "STRONG_SELL" and "BUY NO" not in action:
-        return False
+    action = (report.get("action") or "HOLD").upper().strip()
+
+    if signal == "STRONG_BUY":
+        # Block only if Claude explicitly says to go the other way
+        if action in ("SELL YES", "BUY NO", "SELL NO"):
+            return False
+    if signal == "STRONG_SELL":
+        # Block only if Claude explicitly says to go the other way
+        if action in ("BUY YES", "SELL NO"):
+            return False
 
     # Liquidity floor — need book depth to fill without slippage
     if result.get("liquidity", 0) < config.AGENT_MIN_LIQUIDITY:

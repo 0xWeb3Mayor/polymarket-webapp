@@ -174,9 +174,18 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
             <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase">
               OWS wallet · polygon
             </div>
-            <div className="font-mono text-xs text-[#334155]">
-              {shortAddr(balance.address)}
-            </div>
+            {balance.address ? (
+              <a
+                href={`https://polygonscan.com/address/${balance.address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs text-[#334155] hover:text-[#475569] transition-colors"
+              >
+                {shortAddr(balance.address)} ↗
+              </a>
+            ) : (
+              <div className="font-mono text-xs text-[#334155]">—</div>
+            )}
           </div>
           <div className="text-right">
             <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">
@@ -185,6 +194,11 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
             <div className="font-mono text-2xl font-bold" style={{ color: balanceColor }}>
               {balance.total !== null ? `$${balance.total.toFixed(2)}` : '—'}
             </div>
+            {balance.total === 0 && balance.address && !balance.error && (
+              <div className="font-mono text-[10px] text-[#475569] mt-0.5">
+                verify on polygonscan ↗
+              </div>
+            )}
             {balance.usdc_e !== null && balance.usdc_e > 0 && (
               <div className="font-mono text-[10px] text-[#475569] mt-0.5">
                 native ${balance.usdc?.toFixed(2)} · bridged ${balance.usdc_e.toFixed(2)}
@@ -199,7 +213,7 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
         )}
         {balance.error && balance.address !== null && (
           <div className="mt-3 font-mono text-[10px] text-[#f97316] border-t border-[#1a1a2e] pt-3">
-            RPC error — retrying next refresh · {balance.error.slice(0, 80)}
+            RPC error · {balance.error.slice(0, 100)}
           </div>
         )}
       </div>

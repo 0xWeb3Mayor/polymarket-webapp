@@ -184,16 +184,16 @@ async def run_once() -> list[dict]:
 
 def _gate_reason(result: dict) -> str:
     signal = result.get("forecast", {}).get("signal", "")
-    action = ((result.get("report") or {}).get("action") or "").upper()
+    action = ((result.get("report") or {}).get("action") or "").upper().strip()
     liquidity = result.get("liquidity", 0)
     cid = result.get("condition_id", "")
 
     if signal not in ("STRONG_BUY", "STRONG_SELL"):
         return f"signal too weak ({signal})"
-    if signal == "STRONG_BUY" and "BUY YES" not in action:
-        return f"Claude disagrees (action={action})"
-    if signal == "STRONG_SELL" and "BUY NO" not in action:
-        return f"Claude disagrees (action={action})"
+    if signal == "STRONG_BUY" and action in ("SELL YES", "BUY NO", "SELL NO"):
+        return f"Claude opposes (action={action})"
+    if signal == "STRONG_SELL" and action in ("BUY YES", "SELL NO"):
+        return f"Claude opposes (action={action})"
     if liquidity < config.AGENT_MIN_LIQUIDITY:
         return f"low liquidity (${liquidity:,.0f})"
 
