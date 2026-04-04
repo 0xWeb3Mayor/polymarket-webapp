@@ -2,8 +2,6 @@
 
 An autonomous AI trading agent for [Polymarket](https://polymarket.com) powered by OWS policy-gated signing, TimesFM forecasting, and Claude AI analysis.
 
-**Live demo:** [polyagent trades dashboard](https://polymarket-webapp.vercel.app/trades)
-**Scanner:** [scanner.polyweb.pro](https://polymarket-webapp.vercel.app)
 **GitHub:** [0xWeb3Mayor/polymarket-webapp](https://github.com/0xWeb3Mayor/polymarket-webapp)
 
 ---
