@@ -2,16 +2,50 @@ import sqlite3
 import time
 import requests
 import config
+from datetime import datetime, timezone
+
+
+def _parse_timestamp(value) -> int:
+    """Parse Polymarket date values — handles ISO strings, unix ints, and None."""
+    if not value:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+        try:
+            return int(datetime.fromisoformat(
+                value.replace("Z", "+00:00")
+            ).timestamp())
+        except ValueError:
+            return 0
+    return 0
 
 DB_PATH = config.DB_PATH
 
 
 # ── Wallet balance ────────────────────────────────────────────────────────────
 
-def _erc20_balance(contract: str, wallet: str) -> float:
-    """Query ERC-20 balanceOf via Polygon RPC. Returns token amount (USDC = 6 decimals)."""
+# Multiple public Polygon RPCs — tried in order until one works
+_POLYGON_RPCS = [
+    "https://polygon-rpc.com",
+    "https://rpc.ankr.com/polygon",
+    "https://polygon-bor-rpc.publicnode.com",
+    "https://1rpc.io/matic",
+]
+
+
+def _erc20_balance(contract: str, wallet: str) -> tuple[float, str | None]:
+    """
+    Query ERC-20 balanceOf via Polygon RPC.
+    Returns (balance, error_message). Tries multiple RPCs before giving up.
+    """
     if not wallet:
-        return 0.0
+        return 0.0, "no wallet address configured"
+
     selector = "0x70a08231"
     padded = wallet.lower().replace("0x", "").zfill(64)
     payload = {
@@ -19,28 +53,48 @@ def _erc20_balance(contract: str, wallet: str) -> float:
         "params": [{"to": contract, "data": selector + padded}, "latest"],
         "id": 1,
     }
-    try:
-        r = requests.post(config.POLYGON_RPC, json=payload, timeout=8)
-        result = r.json().get("result", "0x0") or "0x0"
-        return int(result, 16) / 1_000_000  # USDC has 6 decimals
-    except Exception:
-        return 0.0
+
+    rpcs = [config.POLYGON_RPC] + [r for r in _POLYGON_RPCS if r != config.POLYGON_RPC]
+    last_error = None
+
+    for rpc in rpcs:
+        try:
+            r = requests.post(rpc, json=payload, timeout=8)
+            r.raise_for_status()
+            result = r.json().get("result") or "0x0"
+            if result in ("0x", "0x0", "", None):
+                return 0.0, None
+            return int(result, 16) / 1_000_000, None
+        except Exception as e:
+            last_error = f"{rpc}: {e}"
+            continue
+
+    return 0.0, f"all RPCs failed — last: {last_error}"
 
 
 def get_wallet_balance() -> dict:
     """Return USDC balance on Polygon for the configured OWS wallet address."""
     address = config.OWS_WALLET_ADDRESS
     if not address:
-        return {"address": None, "usdc": None, "usdc_e": None, "total": None, "chain": "polygon"}
+        return {
+            "address": None, "usdc": None, "usdc_e": None,
+            "total": None, "chain": "polygon", "error": None,
+        }
 
-    usdc   = _erc20_balance(config.USDC_POLYGON,   address)
-    usdc_e = _erc20_balance(config.USDC_POLYGON_E, address)
+    usdc,   err1 = _erc20_balance(config.USDC_POLYGON,   address)
+    usdc_e, err2 = _erc20_balance(config.USDC_POLYGON_E, address)
+    error = err1 or err2 or None
+
+    if error:
+        print(f"  [WARN] Wallet balance fetch failed: {error}")
+
     return {
         "address": address,
         "usdc":   round(usdc,   2),
         "usdc_e": round(usdc_e, 2),
         "total":  round(usdc + usdc_e, 2),
         "chain":  "polygon",
+        "error":  error,
     }
 
 
@@ -230,7 +284,7 @@ def _fetch_markets_gamma() -> list[dict]:
                 "condition_id": market.get("conditionId") or market.get("condition_id", ""),
                 "question": market.get("question", ""),
                 "token_id": token_id,
-                "close_time": int(market.get("endDate") or market.get("end_date") or 0),
+                "close_time": _parse_timestamp(market.get("endDate") or market.get("end_date")),
                 "last_price": float(market.get("lastTradePrice") or market.get("bestBid") or 0),
                 "volume_24h": float(market.get("volume24hr") or market.get("oneDayVolume") or 0),
                 "liquidity": float(market.get("liquidity") or 0),
@@ -250,19 +304,7 @@ def _fetch_markets_gamma() -> list[dict]:
 def _gamma_market_passes_filters(market: dict) -> bool:
     now = time.time()
     try:
-        # Parse end date — Gamma uses ISO strings or timestamps
-        end_raw = market.get("endDate") or market.get("end_date") or 0
-        if isinstance(end_raw, str):
-            from datetime import datetime, timezone
-            try:
-                close_time = int(datetime.fromisoformat(
-                    end_raw.replace("Z", "+00:00")
-                ).timestamp())
-            except ValueError:
-                close_time = 0
-        else:
-            close_time = int(end_raw or 0)
-
+        close_time = _parse_timestamp(market.get("endDate") or market.get("end_date"))
         liquidity  = float(market.get("liquidity") or 0)
         volume_24h = float(market.get("volume24hr") or market.get("oneDayVolume") or 0)
         last_price = float(market.get("lastTradePrice") or market.get("bestBid") or 0)

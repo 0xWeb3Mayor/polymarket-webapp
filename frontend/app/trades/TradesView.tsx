@@ -197,6 +197,11 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
             set OWS_WALLET_ADDRESS in Railway to see balance
           </div>
         )}
+        {balance.error && balance.address !== null && (
+          <div className="mt-3 font-mono text-[10px] text-[#f97316] border-t border-[#1a1a2e] pt-3">
+            RPC error — retrying next refresh · {balance.error.slice(0, 80)}
+          </div>
+        )}
       </div>
 
       {/* Stats bar */}

@@ -190,6 +190,7 @@ export interface WalletBalance {
   usdc_e: number | null
   total: number | null
   chain: string
+  error: string | null
 }
 
 export async function getWalletBalance(): Promise<WalletBalance> {
