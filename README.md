@@ -2,6 +2,7 @@
 
 An autonomous AI trading agent for [Polymarket](https://polymarket.com) powered by OWS policy-gated signing, TimesFM forecasting, and Claude AI analysis.
 
+**Demo:** https://x.com/mayorxbt/status/2040445286414213313
 **GitHub:** [0xWeb3Mayor/polymarket-webapp](https://github.com/0xWeb3Mayor/polymarket-webapp)
 
 ---
