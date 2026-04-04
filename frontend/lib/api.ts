@@ -164,14 +164,15 @@ export async function getAgentStatus(): Promise<AgentStatus> {
 
 export async function startAgent(): Promise<{ status: string }> {
   const res = await fetch('/api/agent/start', { method: 'POST' })
-  if (!res.ok) throw new Error('Failed to start agent')
-  return res.json()
+  const data = await res.json().catch(() => ({ status: 'error' }))
+  if (!res.ok) throw new Error(data.detail ?? 'Failed to start agent')
+  return data
 }
 
 export async function stopAgent(): Promise<{ status: string }> {
   const res = await fetch('/api/agent/stop', { method: 'POST' })
-  if (!res.ok) throw new Error('Failed to stop agent')
-  return res.json()
+  const data = await res.json().catch(() => ({ status: 'stopped' }))
+  return data
 }
 
 export interface AgentLog {

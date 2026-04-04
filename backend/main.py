@@ -320,24 +320,30 @@ _agent_task: Optional[asyncio.Task] = None
 
 
 @app.post("/agent/start")
-async def start_agent(background_tasks: BackgroundTasks):
-    """Start the autonomous trading loop as a background task."""
+async def start_agent():
+    """Start the autonomous trading loop."""
     global _agent_task
-    import agent as agent_module
-    if _agent_task and not _agent_task.done():
-        return {"status": "already_running"}
-    _agent_task = asyncio.create_task(agent_module.run_agent())
-    return {"status": "started", "live": config.OWS_LIVE}
+    try:
+        import agent as agent_module
+        if _agent_task and not _agent_task.done():
+            return {"status": "already_running", "live": config.OWS_LIVE}
+        _agent_task = asyncio.create_task(agent_module.run_agent())
+        return {"status": "started", "live": config.OWS_LIVE}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 
 @app.post("/agent/stop")
 async def stop_agent():
     """Stop the autonomous trading loop."""
     global _agent_task
-    import agent as agent_module
-    agent_module.stop_agent()
-    if _agent_task:
-        _agent_task.cancel()
+    try:
+        import agent as agent_module
+        agent_module.stop_agent()
+        if _agent_task:
+            _agent_task.cancel()
+    except Exception:
+        pass
     return {"status": "stopped"}
 
 
