@@ -1,6 +1,6 @@
-const API_URL    = process.env.NEXT_PUBLIC_API_URL    ?? 'http://localhost:8000'
-const SECRET     = process.env.NEXT_PUBLIC_AGENT_SECRET ?? ''
-const authHeader = SECRET ? { 'x-agent-secret': SECRET } : {}
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const SECRET  = process.env.NEXT_PUBLIC_AGENT_SECRET ?? ''
+const authHeader: Record<string, string> = SECRET ? { 'x-agent-secret': SECRET } : {}
 
 export type Signal = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL'
 
