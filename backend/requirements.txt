@@ -9,3 +9,6 @@ numpy>=1.24.0
 matplotlib>=3.7.0
 pytest>=7.4.0
 httpx>=0.26.0
+# PolyAgent trading deps
+py-clob-client>=0.17.0
+open-wallet-standard>=0.1.0

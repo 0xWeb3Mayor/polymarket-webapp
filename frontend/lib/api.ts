@@ -98,6 +98,75 @@ export function formatDivergence(pct: number): string {
   return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`
 }
 
+// ── Trade types ───────────────────────────────────────────────────────────────
+
+export interface Trade {
+  id: number
+  condition_id: string
+  question: string
+  side: 'YES' | 'NO'
+  entry_price: number
+  size_usd: number
+  signal: Signal
+  tx_hash: string | null
+  executed_at: number
+  closed_at: number | null
+  exit_price: number | null
+  ows_wallet: string
+  paper_trade: number   // 1 = paper, 0 = live
+  current_price: number | null
+  pnl_pct: number | null
+  polygonscan_url: string | null
+  report?: AIReport | null
+}
+
+export interface AgentStatus {
+  running: boolean
+  live: boolean
+  wallet: string
+  max_trade_usd: number
+  daily_limit_usd: number
+}
+
+export async function getTrades(): Promise<Trade[]> {
+  const res = await fetch(`${API_URL}/trades`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to fetch trades')
+  return res.json()
+}
+
+export async function getTrade(conditionId: string): Promise<Trade> {
+  const res = await fetch(`${API_URL}/trades/${conditionId}`, { cache: 'no-store' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? 'Trade not found')
+  }
+  return res.json()
+}
+
+export async function closeTrade(conditionId: string): Promise<Trade> {
+  const res = await fetch(`${API_URL}/trades/${conditionId}/close`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? 'Failed to close trade')
+  }
+  return res.json()
+}
+
+export async function getAgentStatus(): Promise<AgentStatus> {
+  const res = await fetch(`${API_URL}/agent/status`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to get agent status')
+  return res.json()
+}
+
+export function pnlColor(pnl: number | null): string {
+  if (pnl === null) return '#94a3b8'
+  if (pnl > 5) return '#22c55e'
+  if (pnl > 0) return '#86efac'
+  if (pnl < -5) return '#ef4444'
+  if (pnl < 0) return '#f97316'
+  return '#94a3b8'
+}
+
 export interface ChartPoint {
   timestamp: number
   historical?: number

@@ -1,8 +1,19 @@
+import Link from 'next/link'
 import { UrlInput } from '@/components/UrlInput'
 
 export default function Home() {
   return (
     <main className="flex flex-col flex-1 items-center justify-center min-h-screen px-4">
+      {/* Top nav */}
+      <div className="absolute top-4 right-4">
+        <Link
+          href="/trades"
+          className="font-mono text-xs text-[#475569] hover:text-[#94a3b8] transition-colors tracking-widest uppercase border border-[#1a1a2e] rounded px-3 py-1.5"
+        >
+          agent trades →
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="mb-12 text-center">
         <div className="flex items-center justify-center gap-2 mb-4">
@@ -28,7 +39,9 @@ export default function Home() {
           powered by{' '}
           <span className="text-[#94a3b8]">timesfm</span>
           {' '}·{' '}
-          <span className="text-[#94a3b8]">zero-shot forecasting</span>
+          <span className="text-[#94a3b8]">claude</span>
+          {' '}·{' '}
+          <span className="text-[#94a3b8]">ows</span>
         </p>
       </div>
     </main>

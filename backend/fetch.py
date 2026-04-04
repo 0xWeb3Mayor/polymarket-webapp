@@ -38,6 +38,22 @@ def init_db():
             divergence_pct REAL,
             signal TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            condition_id TEXT NOT NULL,
+            question TEXT,
+            side TEXT NOT NULL,
+            entry_price REAL NOT NULL,
+            size_usd REAL NOT NULL,
+            signal TEXT NOT NULL,
+            tx_hash TEXT,
+            executed_at INTEGER NOT NULL,
+            closed_at INTEGER,
+            exit_price REAL,
+            ows_wallet TEXT NOT NULL,
+            paper_trade INTEGER NOT NULL DEFAULT 1
+        );
     """)
     conn.commit()
     conn.close()
