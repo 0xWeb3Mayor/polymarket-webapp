@@ -353,3 +353,22 @@ async def run_agent_once():
     import agent as agent_module
     executed = await agent_module.run_once()
     return {"trades_executed": len(executed), "trades": executed}
+
+
+@app.get("/agent/logs")
+def get_agent_logs(limit: int = 100):
+    """Return the most recent agent activity log entries."""
+    conn = sqlite3.connect(config.DB_PATH)
+    rows = conn.execute(
+        """SELECT id, ts, level, event, condition_id, detail
+           FROM agent_logs ORDER BY ts DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0], "ts": r[1], "level": r[2],
+            "event": r[3], "condition_id": r[4], "detail": r[5],
+        }
+        for r in rows
+    ]

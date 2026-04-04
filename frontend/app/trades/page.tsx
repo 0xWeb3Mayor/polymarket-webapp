@@ -1,4 +1,4 @@
-import { getTrades, getAgentStatus } from '@/lib/api'
+import { getTrades, getAgentStatus, getAgentLogs } from '@/lib/api'
 import TradesView from './TradesView'
 
 export const metadata = {
@@ -7,7 +7,7 @@ export const metadata = {
 }
 
 export default async function TradesPage() {
-  const [trades, agentStatus] = await Promise.all([
+  const [trades, agentStatus, logs] = await Promise.all([
     getTrades().catch(() => []),
     getAgentStatus().catch(() => ({
       running: false,
@@ -16,7 +16,8 @@ export default async function TradesPage() {
       max_trade_usd: 50,
       daily_limit_usd: 200,
     })),
+    getAgentLogs(100).catch(() => []),
   ])
 
-  return <TradesView initial={trades} agentStatus={agentStatus} />
+  return <TradesView initial={trades} agentStatus={agentStatus} initialLogs={logs} />
 }

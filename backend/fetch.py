@@ -54,6 +54,15 @@ def init_db():
             ows_wallet TEXT NOT NULL,
             paper_trade INTEGER NOT NULL DEFAULT 1
         );
+
+        CREATE TABLE IF NOT EXISTS agent_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            level TEXT NOT NULL,
+            event TEXT NOT NULL,
+            condition_id TEXT,
+            detail TEXT
+        );
     """)
     conn.commit()
     conn.close()

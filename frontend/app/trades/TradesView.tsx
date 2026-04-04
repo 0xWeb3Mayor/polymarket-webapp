@@ -1,31 +1,91 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trade, AgentStatus, closeTrade, getTrades, pnlColor } from '@/lib/api'
+import {
+  Trade, AgentStatus, AgentLog,
+  closeTrade, getTrades, getAgentStatus,
+  startAgent, stopAgent, getAgentLogs,
+  pnlColor,
+} from '@/lib/api'
 import { TradeCard } from '@/components/TradeCard'
 
 interface Props {
   initial: Trade[]
   agentStatus: AgentStatus
+  initialLogs: AgentLog[]
 }
 
-export default function TradesView({ initial, agentStatus }: Props) {
+const LOG_COLORS: Record<string, string> = {
+  INFO:   '#475569',
+  SIGNAL: '#22c55e',
+  GATE:   '#f97316',
+  TRADE:  '#3b82f6',
+  ERROR:  '#ef4444',
+}
+
+const LOG_ICONS: Record<string, string> = {
+  INFO:   '·',
+  SIGNAL: '↑',
+  GATE:   '⊘',
+  TRADE:  '✓',
+  ERROR:  '!',
+}
+
+function formatTs(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString('en-US', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  })
+}
+
+export default function TradesView({ initial, agentStatus: initialStatus, initialLogs }: Props) {
   const router = useRouter()
   const [trades, setTrades] = useState<Trade[]>(initial)
-  const [status] = useState<AgentStatus>(agentStatus)
+  const [status, setStatus] = useState<AgentStatus>(initialStatus)
+  const [logs, setLogs] = useState<AgentLog[]>(initialLogs)
   const [closing, setClosing] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [agentLoading, setAgentLoading] = useState(false)
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      const data = await getTrades()
-      setTrades(data)
+      const [t, s, l] = await Promise.all([
+        getTrades().catch(() => trades),
+        getAgentStatus().catch(() => status),
+        getAgentLogs(100).catch(() => logs),
+      ])
+      setTrades(t)
+      setStatus(s)
+      setLogs(l)
     } finally {
       setRefreshing(false)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll every 15s when agent is running
+  useEffect(() => {
+    if (!status.running) return
+    const id = setInterval(refresh, 15_000)
+    return () => clearInterval(id)
+  }, [status.running, refresh])
+
+  const handleAgentToggle = useCallback(async () => {
+    setAgentLoading(true)
+    try {
+      if (status.running) {
+        await stopAgent()
+      } else {
+        await startAgent()
+      }
+      const s = await getAgentStatus()
+      setStatus(s)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to toggle agent')
+    } finally {
+      setAgentLoading(false)
+    }
+  }, [status.running])
 
   const handleClose = useCallback(async (conditionId: string) => {
     setClosing(conditionId)
@@ -41,8 +101,6 @@ export default function TradesView({ initial, agentStatus }: Props) {
 
   const openTrades = trades.filter(t => t.closed_at === null)
   const closedTrades = trades.filter(t => t.closed_at !== null)
-
-  // Aggregate stats
   const pnlValues = trades.filter(t => t.pnl_pct !== null).map(t => t.pnl_pct!)
   const avgPnl = pnlValues.length > 0
     ? pnlValues.reduce((a, b) => a + b, 0) / pnlValues.length
@@ -51,6 +109,7 @@ export default function TradesView({ initial, agentStatus }: Props) {
 
   return (
     <main className="min-h-screen px-4 py-8 max-w-3xl mx-auto space-y-8">
+
       {/* Nav */}
       <div className="flex items-center justify-between">
         <button
@@ -59,33 +118,47 @@ export default function TradesView({ initial, agentStatus }: Props) {
         >
           ← scanner
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span
             className={`w-1.5 h-1.5 rounded-full ${status.running ? 'bg-[#22c55e] animate-pulse' : 'bg-[#475569]'}`}
           />
           <span className="text-[#475569] text-xs font-mono">
             {status.running ? 'agent running' : 'agent idle'}
           </span>
-          {status.live ? (
-            <span className="font-mono text-[10px] text-[#ef4444] border border-[#ef4444]/30 rounded px-1.5 py-0.5 uppercase tracking-widest">
-              live
-            </span>
-          ) : (
-            <span className="font-mono text-[10px] text-[#475569] border border-[#334155] rounded px-1.5 py-0.5 uppercase tracking-widest">
-              paper
-            </span>
-          )}
+          <span
+            className={`font-mono text-[10px] border rounded px-1.5 py-0.5 uppercase tracking-widest ${
+              status.live
+                ? 'text-[#ef4444] border-[#ef4444]/30'
+                : 'text-[#475569] border-[#334155]'
+            }`}
+          >
+            {status.live ? 'live' : 'paper'}
+          </span>
         </div>
       </div>
 
-      {/* Header */}
-      <div>
-        <h1 className="font-mono text-xl font-bold text-[#f1f5f9] tracking-tight mb-1">
-          polyagent trades
-        </h1>
-        <p className="font-mono text-xs text-[#475569]">
-          {status.wallet} · max ${status.max_trade_usd}/trade · ${status.daily_limit_usd}/day
-        </p>
+      {/* Header + Start/Stop */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-mono text-xl font-bold text-[#f1f5f9] tracking-tight mb-1">
+            polyagent trades
+          </h1>
+          <p className="font-mono text-xs text-[#475569]">
+            {status.wallet} · max ${status.max_trade_usd}/trade · ${status.daily_limit_usd}/day
+          </p>
+        </div>
+
+        <button
+          onClick={handleAgentToggle}
+          disabled={agentLoading}
+          className={`font-mono text-xs px-4 py-2 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 shrink-0 ${
+            status.running
+              ? 'border-[#ef4444]/50 text-[#ef4444] hover:border-[#ef4444]'
+              : 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
+          }`}
+        >
+          {agentLoading ? '...' : status.running ? 'stop agent' : 'start agent'}
+        </button>
       </div>
 
       {/* Stats bar */}
@@ -100,25 +173,56 @@ export default function TradesView({ initial, agentStatus }: Props) {
         </div>
         <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-4">
           <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">Avg P&L</div>
-          <div
-            className="font-mono text-2xl font-bold"
-            style={{ color: pnlColor(avgPnl) }}
-          >
+          <div className="font-mono text-2xl font-bold" style={{ color: pnlColor(avgPnl) }}>
             {avgPnl !== null ? `${avgPnl > 0 ? '+' : ''}${avgPnl.toFixed(1)}%` : '—'}
           </div>
         </div>
       </div>
 
-      {/* Refresh */}
-      <div className="flex justify-end">
-        <button
-          onClick={refresh}
-          disabled={refreshing}
-          className="font-mono text-[10px] text-[#475569] hover:text-[#94a3b8] transition-colors tracking-widest uppercase disabled:opacity-40"
-        >
-          {refreshing ? 'refreshing...' : '↻ refresh'}
-        </button>
-      </div>
+      {/* Agent activity log */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="font-mono text-xs text-[#475569] tracking-widest uppercase">
+            agent activity
+          </div>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            className="font-mono text-[10px] text-[#475569] hover:text-[#94a3b8] transition-colors tracking-widest uppercase disabled:opacity-40"
+          >
+            {refreshing ? 'refreshing...' : '↻ refresh'}
+          </button>
+        </div>
+
+        <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4 space-y-1.5 max-h-64 overflow-y-auto font-mono text-[11px]">
+          {logs.length === 0 ? (
+            <div className="text-[#334155] text-center py-4">
+              no activity yet — start the agent to begin scanning
+            </div>
+          ) : (
+            logs.map(log => (
+              <div key={log.id} className="flex items-start gap-2.5">
+                <span className="text-[#334155] shrink-0">{formatTs(log.ts)}</span>
+                <span
+                  className="shrink-0 font-bold w-3 text-center"
+                  style={{ color: LOG_COLORS[log.level] ?? '#475569' }}
+                >
+                  {LOG_ICONS[log.level] ?? '·'}
+                </span>
+                <span style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>
+                  {log.event}
+                </span>
+                {log.condition_id && (
+                  <span className="text-[#334155] shrink-0">{log.condition_id.slice(0, 10)}…</span>
+                )}
+                {log.detail && (
+                  <span className="text-[#475569] truncate">{log.detail}</span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </section>
 
       {/* Open positions */}
       {openTrades.length > 0 && (
@@ -128,10 +232,7 @@ export default function TradesView({ initial, agentStatus }: Props) {
           </div>
           {openTrades.map(trade => (
             <div key={trade.id} className={closing === trade.condition_id ? 'opacity-50 pointer-events-none' : ''}>
-              <TradeCard
-                trade={trade}
-                onClose={handleClose}
-              />
+              <TradeCard trade={trade} onClose={handleClose} />
             </div>
           ))}
         </section>
@@ -149,12 +250,14 @@ export default function TradesView({ initial, agentStatus }: Props) {
         </section>
       )}
 
-      {/* Empty state */}
+      {/* Empty trades state */}
       {trades.length === 0 && (
-        <div className="text-center py-20">
+        <div className="text-center py-12">
           <div className="font-mono text-[#475569] text-sm mb-2">no trades yet</div>
           <div className="font-mono text-[#334155] text-xs">
-            agent scans every hour — strong signals trigger automatic execution
+            {status.running
+              ? 'agent is scanning — trades appear when strong signals pass the gate'
+              : 'start the agent above to begin autonomous scanning'}
           </div>
         </div>
       )}

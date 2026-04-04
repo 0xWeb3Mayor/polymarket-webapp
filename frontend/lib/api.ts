@@ -158,6 +158,33 @@ export async function getAgentStatus(): Promise<AgentStatus> {
   return res.json()
 }
 
+export async function startAgent(): Promise<{ status: string }> {
+  const res = await fetch(`${API_URL}/agent/start`, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to start agent')
+  return res.json()
+}
+
+export async function stopAgent(): Promise<{ status: string }> {
+  const res = await fetch(`${API_URL}/agent/stop`, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to stop agent')
+  return res.json()
+}
+
+export interface AgentLog {
+  id: number
+  ts: number
+  level: 'INFO' | 'SIGNAL' | 'GATE' | 'TRADE' | 'ERROR'
+  event: string
+  condition_id: string | null
+  detail: string | null
+}
+
+export async function getAgentLogs(limit = 100): Promise<AgentLog[]> {
+  const res = await fetch(`${API_URL}/agent/logs?limit=${limit}`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to fetch agent logs')
+  return res.json()
+}
+
 export function pnlColor(pnl: number | null): string {
   if (pnl === null) return '#94a3b8'
   if (pnl > 5) return '#22c55e'
