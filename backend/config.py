@@ -42,7 +42,7 @@ CLOB_API_SECRET = os.environ.get("CLOB_API_SECRET", "")
 CLOB_API_PASSPHRASE = os.environ.get("CLOB_API_PASSPHRASE", "")
 
 # Risk limits (also enforced at OWS policy layer)
-MAX_TRADE_USD = float(os.environ.get("MAX_TRADE_USD", "50"))
+MAX_TRADE_USD = float(os.environ.get("MAX_TRADE_USD", "10"))
 DAILY_LIMIT_USD = float(os.environ.get("DAILY_LIMIT_USD", "200"))
 
 # Execution gate
