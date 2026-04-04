@@ -235,23 +235,25 @@ _TRADE_COLS = [
 def _enrich_trade(row: tuple) -> dict:
     """Add current_price and pnl_pct to a raw trades row."""
     t = dict(zip(_TRADE_COLS, row))
-    pnl = trader.get_pnl(t["condition_id"])
-    if pnl and t["closed_at"] is None:
-        t["current_price"] = pnl.get("current_price")
-        t["pnl_pct"] = pnl.get("pnl_pct")
-    else:
-        t["current_price"] = t.get("exit_price")
-        if t["entry_price"] and t.get("exit_price"):
-            if t["side"] == "YES":
+    try:
+        if t["closed_at"] is None:
+            pnl = trader.get_pnl(t["condition_id"])
+            t["current_price"] = (pnl or {}).get("current_price")
+            t["pnl_pct"]       = (pnl or {}).get("pnl_pct")
+        else:
+            t["current_price"] = t.get("exit_price")
+            entry, exit_ = t.get("entry_price"), t.get("exit_price")
+            if entry and exit_:
                 t["pnl_pct"] = round(
-                    ((t["exit_price"] - t["entry_price"]) / t["entry_price"]) * 100, 2
+                    ((exit_ - entry) / entry * 100) if t["side"] == "YES"
+                    else ((entry - exit_) / entry * 100),
+                    2,
                 )
             else:
-                t["pnl_pct"] = round(
-                    ((t["entry_price"] - t["exit_price"]) / t["entry_price"]) * 100, 2
-                )
-        else:
-            t["pnl_pct"] = None
+                t["pnl_pct"] = None
+    except Exception:
+        t["current_price"] = None
+        t["pnl_pct"]       = None
     t["polygonscan_url"] = (
         f"https://polygonscan.com/tx/{t['tx_hash']}" if t.get("tx_hash") else None
     )
@@ -372,6 +374,56 @@ async def run_agent_once():
 def wallet_balance():
     """Return USDC balance on Polygon for the OWS wallet."""
     return fetch.get_wallet_balance()
+
+
+@app.post("/demo/seed")
+def demo_seed():
+    """Insert realistic paper trades for demo/hackathon purposes."""
+    now = int(time.time())
+    demo_trades = [
+        (
+            "0x6c013e0e5f2a1b3d4c5e6f7a8b9c0d1e2f3a4b5c",
+            "Will Russia and Ukraine reach a ceasefire agreement by June 2026?",
+            "YES", 0.060, 50.0, "STRONG_BUY", "0x4e017454ac77291a2b3c4d5e6f7a8b9c0d1e2f3a",
+            now - 3600, None, None, "polyagent-treasury", 1,
+        ),
+        (
+            "0x0b54eb55f3c2d4e5f6a7b8c9d0e1f2a3b4c5d6e7",
+            "Will Taiwan hold presidential elections without military incident in 2026?",
+            "YES", 0.035, 50.0, "STRONG_BUY", "0x1230767c8799af2b3c4d5e6f7a8b9c0d1e2f3a4b",
+            now - 7200, None, None, "polyagent-treasury", 1,
+        ),
+        (
+            "0x49e0fd35a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9",
+            "Will Iran nuclear talks result in a deal before end of 2026?",
+            "YES", 0.199, 50.0, "STRONG_BUY", "0x5a4dbe899a921e3c4d5e6f7a8b9c0d1e2f3a4b5c",
+            now - 1800, None, None, "polyagent-treasury", 1,
+        ),
+        (
+            "0x16b7d06d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b",
+            "Will there be a military conflict between NATO and Russia in 2026?",
+            "NO", 0.921, 50.0, "STRONG_SELL", "0x5a4dbe899a921ef3a4b5c6d7e8f9a0b1c2d3e4f5",
+            now - 5400, None, None, "polyagent-treasury", 1,
+        ),
+    ]
+    conn = sqlite3.connect(config.DB_PATH)
+    inserted = 0
+    for t in demo_trades:
+        existing = conn.execute(
+            "SELECT id FROM trades WHERE condition_id = ? AND closed_at IS NULL", (t[0],)
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                """INSERT INTO trades
+                   (condition_id, question, side, entry_price, size_usd, signal,
+                    tx_hash, executed_at, closed_at, exit_price, ows_wallet, paper_trade)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                t,
+            )
+            inserted += 1
+    conn.commit()
+    conn.close()
+    return {"inserted": inserted, "message": f"{inserted} demo trades added"}
 
 
 @app.get("/agent/logs")
