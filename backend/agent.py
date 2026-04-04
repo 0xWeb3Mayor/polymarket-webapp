@@ -1,10 +1,9 @@
 """
 agent.py — PolyAgent autonomous scan loop
 
-Runs on a cron: fetch markets → forecast → gate → execute.
-Every decision is logged to the agent_logs DB table.
-Launch directly:  python agent.py
-Or via the /agent/* API endpoints in main.py.
+Auto-started on server boot. No manual intervention required.
+Geopolitics markets are scanned first every pass.
+Scan interval: AGENT_SCAN_INTERVAL (default 900s / 15 min).
 """
 
 import asyncio
@@ -25,16 +24,14 @@ _running = False
 # ── Logging ───────────────────────────────────────────────────────────────────
 
 def _log(level: str, event: str, condition_id: str = None, detail: str = None):
-    """Write a structured log entry to agent_logs and stdout."""
     ts = int(time.time())
-    prefix = {"INFO": "[·]", "SIGNAL": "[↑]", "GATE": "[⊘]", "TRADE": "[✓]", "ERROR": "[!]"}.get(level, "[·]")
-    parts = [f"{prefix} {event}"]
+    icons = {"INFO": "·", "SIGNAL": "↑", "GATE": "⊘", "TRADE": "✓", "ERROR": "!"}
+    parts = [f"[{icons.get(level,'·')}] {event}"]
     if condition_id:
         parts.append(condition_id[:14] + "...")
     if detail:
         parts.append(detail)
     print("  ".join(parts))
-
     try:
         conn = sqlite3.connect(config.DB_PATH)
         conn.execute(
@@ -44,16 +41,35 @@ def _log(level: str, event: str, condition_id: str = None, detail: str = None):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"  [WARN] Failed to write agent log: {e}")
+        print(f"  [WARN] log write failed: {e}")
+
+
+# ── Geopolitics scoring ───────────────────────────────────────────────────────
+
+def _geo_score(question: str) -> int:
+    """Return count of geopolitics keyword hits. Higher = more relevant."""
+    q = question.lower()
+    return sum(1 for kw in config.GEOPOLITICS_KEYWORDS if kw in q)
+
+
+def _prioritise(markets: list[dict]) -> list[dict]:
+    """
+    Sort markets so geopolitics come first.
+    Within each tier, shuffle to avoid always hitting the same markets first.
+    """
+    geo   = [m for m in markets if _geo_score(m["question"]) > 0]
+    other = [m for m in markets if _geo_score(m["question"]) == 0]
+
+    # Sort geo by score desc (most keyword hits first)
+    geo.sort(key=lambda m: _geo_score(m["question"]), reverse=True)
+    random.shuffle(other)
+
+    return geo + other
 
 
 # ── Single scan pass ──────────────────────────────────────────────────────────
 
 async def run_once() -> list[dict]:
-    """
-    Single pass: scan all markets, fire on STRONG signals that pass the gate.
-    Returns list of trade records executed this pass.
-    """
     _log("INFO", "Scan started")
     executed = []
 
@@ -63,15 +79,18 @@ async def run_once() -> list[dict]:
         _log("ERROR", "fetch_markets failed", detail=str(e))
         return executed
 
-    _log("INFO", f"Markets loaded", detail=f"{len(markets)} markets")
+    prioritised = _prioritise(markets)
+    geo_count = sum(1 for m in prioritised if _geo_score(m["question"]) > 0)
+    _log("INFO", "Markets loaded", detail=f"{len(prioritised)} total  {geo_count} geopolitics")
 
     strong_count = 0
     blocked_count = 0
 
-    for market in markets:
-        await asyncio.sleep(random.uniform(0.5, 2.0))
+    for market in prioritised:
+        await asyncio.sleep(random.uniform(0.3, 1.2))  # gentle rate limit
 
         cid = market["condition_id"]
+        is_geo = _geo_score(market["question"]) > 0
 
         try:
             history = fetch.fetch_price_history(cid, market["token_id"])
@@ -96,11 +115,12 @@ async def run_once() -> list[dict]:
                 continue
 
             strong_count += 1
+            geo_tag = " [GEO]" if is_geo else ""
             _log(
                 "SIGNAL",
-                f"{signal}",
+                f"{signal}{geo_tag}",
                 condition_id=cid,
-                detail=f"divergence={divergence_pct:+.1f}%  price={last_price:.3f}→{forecast_result['forecast_price']:.3f}",
+                detail=f"div={divergence_pct:+.1f}%  {last_price:.3f}→{forecast_result['forecast_price']:.3f}",
             )
 
             ai_report = report_module.generate_report(
@@ -114,12 +134,7 @@ async def run_once() -> list[dict]:
             )
 
             claude_action = (ai_report or {}).get("action", "—")
-            _log(
-                "INFO",
-                "Claude report",
-                condition_id=cid,
-                detail=f"action={claude_action}",
-            )
+            _log("INFO", "Claude report", condition_id=cid, detail=f"action={claude_action}")
 
             result = {
                 "condition_id": cid,
@@ -153,12 +168,10 @@ async def run_once() -> list[dict]:
                 )
             else:
                 blocked_count += 1
-                # Explain why the gate blocked
-                reason = _gate_reason(result)
-                _log("GATE", f"Blocked — {reason}", condition_id=cid)
+                _log("GATE", f"Blocked — {_gate_reason(result)}", condition_id=cid)
 
         except Exception as e:
-            _log("ERROR", f"Processing failed", condition_id=cid, detail=str(e))
+            _log("ERROR", "Processing failed", condition_id=cid, detail=str(e))
             continue
 
     _log(
@@ -170,10 +183,8 @@ async def run_once() -> list[dict]:
 
 
 def _gate_reason(result: dict) -> str:
-    """Return a human-readable explanation of why the gate blocked a trade."""
     signal = result.get("forecast", {}).get("signal", "")
-    report = result.get("report") or {}
-    action = (report.get("action") or "").upper()
+    action = ((result.get("report") or {}).get("action") or "").upper()
     liquidity = result.get("liquidity", 0)
     cid = result.get("condition_id", "")
 
@@ -184,16 +195,15 @@ def _gate_reason(result: dict) -> str:
     if signal == "STRONG_SELL" and "BUY NO" not in action:
         return f"Claude disagrees (action={action})"
     if liquidity < config.AGENT_MIN_LIQUIDITY:
-        return f"liquidity too low (${liquidity:,.0f} < ${config.AGENT_MIN_LIQUIDITY:,})"
+        return f"low liquidity (${liquidity:,.0f})"
 
     conn = sqlite3.connect(config.DB_PATH)
     row = conn.execute(
-        "SELECT id FROM trades WHERE condition_id = ? AND closed_at IS NULL", (cid,)
+        "SELECT id FROM trades WHERE condition_id=? AND closed_at IS NULL", (cid,)
     ).fetchone()
     conn.close()
     if row:
         return "position already open"
-
     return "unknown"
 
 
@@ -202,7 +212,7 @@ def _gate_reason(result: dict) -> str:
 async def run_agent():
     global _running
     _running = True
-    _log("INFO", f"Agent started", detail=f"interval={config.AGENT_SCAN_INTERVAL}s  live={config.OWS_LIVE}")
+    _log("INFO", "Agent started", detail=f"interval={config.AGENT_SCAN_INTERVAL}s  live={config.OWS_LIVE}  geo-priority=on")
 
     while _running:
         await run_once()

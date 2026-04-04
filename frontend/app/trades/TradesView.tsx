@@ -3,9 +3,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Trade, AgentStatus, AgentLog,
+  Trade, AgentStatus, AgentLog, WalletBalance,
   closeTrade, getTrades, getAgentStatus,
-  startAgent, stopAgent, getAgentLogs,
+  startAgent, stopAgent, getAgentLogs, getWalletBalance,
   pnlColor,
 } from '@/lib/api'
 import { TradeCard } from '@/components/TradeCard'
@@ -14,6 +14,7 @@ interface Props {
   initial: Trade[]
   agentStatus: AgentStatus
   initialLogs: AgentLog[]
+  initialBalance: WalletBalance
 }
 
 const LOG_COLORS: Record<string, string> = {
@@ -38,11 +39,17 @@ function formatTs(ts: number): string {
   })
 }
 
-export default function TradesView({ initial, agentStatus: initialStatus, initialLogs }: Props) {
+function shortAddr(addr: string | null): string {
+  if (!addr) return '—'
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+}
+
+export default function TradesView({ initial, agentStatus: initialStatus, initialLogs, initialBalance }: Props) {
   const router = useRouter()
   const [trades, setTrades] = useState<Trade[]>(initial)
   const [status, setStatus] = useState<AgentStatus>(initialStatus)
   const [logs, setLogs] = useState<AgentLog[]>(initialLogs)
+  const [balance, setBalance] = useState<WalletBalance>(initialBalance)
   const [closing, setClosing] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [agentLoading, setAgentLoading] = useState(false)
@@ -50,20 +57,22 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
   const refresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      const [t, s, l] = await Promise.all([
+      const [t, s, l, b] = await Promise.all([
         getTrades().catch(() => trades),
         getAgentStatus().catch(() => status),
         getAgentLogs(100).catch(() => logs),
+        getWalletBalance().catch(() => balance),
       ])
       setTrades(t)
       setStatus(s)
       setLogs(l)
+      setBalance(b)
     } finally {
       setRefreshing(false)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll every 15s when agent is running
+  // Poll every 15s while agent is running
   useEffect(() => {
     if (!status.running) return
     const id = setInterval(refresh, 15_000)
@@ -107,6 +116,10 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
     : null
   const totalDeployed = openTrades.reduce((a, t) => a + t.size_usd, 0)
 
+  const balanceColor = balance.total !== null
+    ? (balance.total > 0 ? '#22c55e' : '#475569')
+    : '#475569'
+
   return (
     <main className="min-h-screen px-4 py-8 max-w-3xl mx-auto space-y-8">
 
@@ -119,20 +132,14 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           ← scanner
         </button>
         <div className="flex items-center gap-3">
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${status.running ? 'bg-[#22c55e] animate-pulse' : 'bg-[#475569]'}`}
-          />
+          <span className={`w-1.5 h-1.5 rounded-full ${status.running ? 'bg-[#22c55e] animate-pulse' : 'bg-[#475569]'}`} />
           <span className="text-[#475569] text-xs font-mono">
             {status.running ? 'agent running' : 'agent idle'}
           </span>
-          <span
-            className={`font-mono text-[10px] border rounded px-1.5 py-0.5 uppercase tracking-widest ${
-              status.live
-                ? 'text-[#22c55e] border-[#22c55e]/30'
-                : 'text-[#475569] border-[#334155]'
-            }`}
-          >
-            {status.live ? 'mainnet' : 'mainnet'}
+          <span className={`font-mono text-[10px] border rounded px-1.5 py-0.5 uppercase tracking-widest ${
+            status.live ? 'text-[#22c55e] border-[#22c55e]/30' : 'text-[#475569] border-[#334155]'
+          }`}>
+            mainnet
           </span>
         </div>
       </div>
@@ -147,7 +154,6 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
             {status.wallet} · max ${status.max_trade_usd}/trade · ${status.daily_limit_usd}/day
           </p>
         </div>
-
         <button
           onClick={handleAgentToggle}
           disabled={agentLoading}
@@ -159,6 +165,38 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
         >
           {agentLoading ? '...' : status.running ? 'stop agent' : 'start agent'}
         </button>
+      </div>
+
+      {/* Wallet balance */}
+      <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase">
+              OWS wallet · polygon
+            </div>
+            <div className="font-mono text-xs text-[#334155]">
+              {shortAddr(balance.address)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">
+              USDC balance
+            </div>
+            <div className="font-mono text-2xl font-bold" style={{ color: balanceColor }}>
+              {balance.total !== null ? `$${balance.total.toFixed(2)}` : '—'}
+            </div>
+            {balance.usdc_e !== null && balance.usdc_e > 0 && (
+              <div className="font-mono text-[10px] text-[#475569] mt-0.5">
+                native ${balance.usdc?.toFixed(2)} · bridged ${balance.usdc_e.toFixed(2)}
+              </div>
+            )}
+          </div>
+        </div>
+        {balance.address === null && (
+          <div className="mt-3 font-mono text-[10px] text-[#475569] border-t border-[#1a1a2e] pt-3">
+            set OWS_WALLET_ADDRESS in Railway to see balance
+          </div>
+        )}
       </div>
 
       {/* Stats bar */}
@@ -197,21 +235,16 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
         <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4 space-y-1.5 max-h-64 overflow-y-auto font-mono text-[11px]">
           {logs.length === 0 ? (
             <div className="text-[#334155] text-center py-4">
-              no activity yet — start the agent to begin scanning
+              no activity yet — agent starts automatically on deploy
             </div>
           ) : (
             logs.map(log => (
               <div key={log.id} className="flex items-start gap-2.5">
                 <span className="text-[#334155] shrink-0">{formatTs(log.ts)}</span>
-                <span
-                  className="shrink-0 font-bold w-3 text-center"
-                  style={{ color: LOG_COLORS[log.level] ?? '#475569' }}
-                >
+                <span className="shrink-0 font-bold w-3 text-center" style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>
                   {LOG_ICONS[log.level] ?? '·'}
                 </span>
-                <span style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>
-                  {log.event}
-                </span>
+                <span style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>{log.event}</span>
                 {log.condition_id && (
                   <span className="text-[#334155] shrink-0">{log.condition_id.slice(0, 10)}…</span>
                 )}
@@ -250,14 +283,14 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
         </section>
       )}
 
-      {/* Empty trades state */}
+      {/* Empty state */}
       {trades.length === 0 && (
         <div className="text-center py-12">
           <div className="font-mono text-[#475569] text-sm mb-2">no trades yet</div>
           <div className="font-mono text-[#334155] text-xs">
             {status.running
-              ? 'agent is scanning — trades appear when strong signals pass the gate'
-              : 'start the agent above to begin autonomous scanning'}
+              ? 'scanning geopolitics markets first — trades appear when strong signals pass the gate'
+              : 'agent auto-starts on deploy — or click start agent above'}
           </div>
         </div>
       )}

@@ -6,6 +6,44 @@ import config
 DB_PATH = config.DB_PATH
 
 
+# ── Wallet balance ────────────────────────────────────────────────────────────
+
+def _erc20_balance(contract: str, wallet: str) -> float:
+    """Query ERC-20 balanceOf via Polygon RPC. Returns token amount (USDC = 6 decimals)."""
+    if not wallet:
+        return 0.0
+    selector = "0x70a08231"
+    padded = wallet.lower().replace("0x", "").zfill(64)
+    payload = {
+        "jsonrpc": "2.0", "method": "eth_call",
+        "params": [{"to": contract, "data": selector + padded}, "latest"],
+        "id": 1,
+    }
+    try:
+        r = requests.post(config.POLYGON_RPC, json=payload, timeout=8)
+        result = r.json().get("result", "0x0") or "0x0"
+        return int(result, 16) / 1_000_000  # USDC has 6 decimals
+    except Exception:
+        return 0.0
+
+
+def get_wallet_balance() -> dict:
+    """Return USDC balance on Polygon for the configured OWS wallet address."""
+    address = config.OWS_WALLET_ADDRESS
+    if not address:
+        return {"address": None, "usdc": None, "usdc_e": None, "total": None, "chain": "polygon"}
+
+    usdc   = _erc20_balance(config.USDC_POLYGON,   address)
+    usdc_e = _erc20_balance(config.USDC_POLYGON_E, address)
+    return {
+        "address": address,
+        "usdc":   round(usdc,   2),
+        "usdc_e": round(usdc_e, 2),
+        "total":  round(usdc + usdc_e, 2),
+        "chain":  "polygon",
+    }
+
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.executescript("""

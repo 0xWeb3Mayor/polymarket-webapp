@@ -47,4 +47,22 @@ DAILY_LIMIT_USD = float(os.environ.get("DAILY_LIMIT_USD", "200"))
 
 # Execution gate
 AGENT_MIN_LIQUIDITY = 10_000   # 2x standard filter — needs book depth
-AGENT_SCAN_INTERVAL = 3600     # seconds between autonomous scans
+AGENT_SCAN_INTERVAL = int(os.environ.get("AGENT_SCAN_INTERVAL", "900"))  # 15 min default
+
+# Wallet balance
+OWS_WALLET_ADDRESS = os.environ.get("OWS_WALLET_ADDRESS", "")
+POLYGON_RPC = os.environ.get("POLYGON_RPC", "https://polygon-rpc.com")
+USDC_POLYGON   = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"  # native USDC
+USDC_POLYGON_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # bridged USDC.e
+
+# Geopolitics keyword filter (markets matching any keyword are prioritised)
+GEOPOLITICS_KEYWORDS = [
+    "election", "president", "prime minister", "minister", "parliament",
+    "senate", "congress", "vote", "referendum", "chancellor", "leader",
+    "war", "conflict", "military", "troops", "invasion", "ceasefire",
+    "missile", "nuclear", "coup", "assassination", "protest", "regime",
+    "nato", "sanctions", "treaty", "alliance", "summit", "diplomacy",
+    "russia", "ukraine", "china", "taiwan", "israel", "iran", "north korea",
+    "gaza", "middle east", "europe", "geopolit", "bilateral", "tariff",
+    "trade war", "us-china", "g7", "g20", "un security",
+]

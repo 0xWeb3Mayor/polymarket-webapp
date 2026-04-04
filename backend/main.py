@@ -27,8 +27,13 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def startup():
+async def startup():
     fetch.init_db()
+    # Auto-start agent — no manual intervention required
+    global _agent_task
+    import agent as agent_module
+    _agent_task = asyncio.create_task(agent_module.run_agent())
+    print(f"[STARTUP] PolyAgent auto-started (live={config.OWS_LIVE}, interval={config.AGENT_SCAN_INTERVAL}s)")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -353,6 +358,12 @@ async def run_agent_once():
     import agent as agent_module
     executed = await agent_module.run_once()
     return {"trades_executed": len(executed), "trades": executed}
+
+
+@app.get("/wallet/balance")
+def wallet_balance():
+    """Return USDC balance on Polygon for the OWS wallet."""
+    return fetch.get_wallet_balance()
 
 
 @app.get("/agent/logs")

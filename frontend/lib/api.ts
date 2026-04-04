@@ -183,6 +183,23 @@ export interface AgentLog {
   detail: string | null
 }
 
+export interface WalletBalance {
+  address: string | null
+  usdc: number | null
+  usdc_e: number | null
+  total: number | null
+  chain: string
+}
+
+export async function getWalletBalance(): Promise<WalletBalance> {
+  const url = typeof window !== 'undefined'
+    ? '/api/wallet/balance'
+    : `${API_URL}/wallet/balance`
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to fetch wallet balance')
+  return res.json()
+}
+
 export async function getAgentLogs(limit = 100): Promise<AgentLog[]> {
   const url = typeof window !== 'undefined'
     ? `/api/agent/logs?limit=${limit}`
