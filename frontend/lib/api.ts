@@ -153,19 +153,23 @@ export async function closeTrade(conditionId: string): Promise<Trade> {
 }
 
 export async function getAgentStatus(): Promise<AgentStatus> {
-  const res = await fetch(`${API_URL}/agent/status`, { cache: 'no-store' })
+  // Try proxy first (client-side), fall back to direct (server-side)
+  const url = typeof window !== 'undefined'
+    ? '/api/agent/status'
+    : `${API_URL}/agent/status`
+  const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to get agent status')
   return res.json()
 }
 
 export async function startAgent(): Promise<{ status: string }> {
-  const res = await fetch(`${API_URL}/agent/start`, { method: 'POST' })
+  const res = await fetch('/api/agent/start', { method: 'POST' })
   if (!res.ok) throw new Error('Failed to start agent')
   return res.json()
 }
 
 export async function stopAgent(): Promise<{ status: string }> {
-  const res = await fetch(`${API_URL}/agent/stop`, { method: 'POST' })
+  const res = await fetch('/api/agent/stop', { method: 'POST' })
   if (!res.ok) throw new Error('Failed to stop agent')
   return res.json()
 }
@@ -180,7 +184,10 @@ export interface AgentLog {
 }
 
 export async function getAgentLogs(limit = 100): Promise<AgentLog[]> {
-  const res = await fetch(`${API_URL}/agent/logs?limit=${limit}`, { cache: 'no-store' })
+  const url = typeof window !== 'undefined'
+    ? `/api/agent/logs?limit=${limit}`
+    : `${API_URL}/agent/logs?limit=${limit}`
+  const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to fetch agent logs')
   return res.json()
 }

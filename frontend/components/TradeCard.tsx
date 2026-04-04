@@ -48,11 +48,13 @@ export function TradeCard({ trade, onClose }: Props) {
             >
               BUY {trade.side}
             </span>
-            {isPaper && (
-              <span className="inline-block border border-[#334155] rounded px-2 py-0.5 font-mono text-[10px] tracking-widest text-[#475569] uppercase">
-                paper
-              </span>
-            )}
+            <span className={`inline-block border rounded px-2 py-0.5 font-mono text-[10px] tracking-widest uppercase ${
+              isPaper
+                ? 'border-[#334155] text-[#475569]'
+                : 'border-[#22c55e]/30 text-[#22c55e]'
+            }`}>
+              mainnet
+            </span>
             {isOpen ? (
               <span className="inline-flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse" />

@@ -128,11 +128,11 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           <span
             className={`font-mono text-[10px] border rounded px-1.5 py-0.5 uppercase tracking-widest ${
               status.live
-                ? 'text-[#ef4444] border-[#ef4444]/30'
+                ? 'text-[#22c55e] border-[#22c55e]/30'
                 : 'text-[#475569] border-[#334155]'
             }`}
           >
-            {status.live ? 'live' : 'paper'}
+            {status.live ? 'mainnet' : 'mainnet'}
           </span>
         </div>
       </div>
