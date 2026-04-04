@@ -18,7 +18,7 @@ export default async function TradesPage() {
     })),
     getAgentLogs(100).catch(() => []),
     getWalletBalance().catch(() => ({
-      address: null, usdc: null, usdc_e: null, total: null, chain: 'polygon',
+      address: null, usdc: null, usdc_e: null, total: null, chain: 'multi', chains: {}, error: null,
     })),
   ])
 
