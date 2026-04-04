@@ -73,7 +73,6 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll every 15s while agent is running
   useEffect(() => {
     if (!status.running) return
     const id = setInterval(refresh, 15_000)
@@ -122,91 +121,91 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
     }
   }, [refresh])
 
-  const openTrades = trades.filter(t => t.closed_at === null)
-  const closedTrades = trades.filter(t => t.closed_at !== null)
-  const pnlValues = trades.filter(t => t.pnl_pct !== null).map(t => t.pnl_pct!)
-  const avgPnl = pnlValues.length > 0
+  const openTrades    = trades.filter(t => t.closed_at === null)
+  const closedTrades  = trades.filter(t => t.closed_at !== null)
+  const pnlValues     = trades.filter(t => t.pnl_pct !== null).map(t => t.pnl_pct!)
+  const avgPnl        = pnlValues.length > 0
     ? pnlValues.reduce((a, b) => a + b, 0) / pnlValues.length
     : null
   const totalDeployed = openTrades.reduce((a, t) => a + t.size_usd, 0)
 
-  const balanceColor = balance.total !== null
-    ? (balance.total > 0 ? '#22c55e' : '#475569')
-    : '#475569'
+  // Polygon USDC is what Polymarket settles on
+  const polyUsdc    = (balance.usdc ?? 0) + (balance.usdc_e ?? 0)
+  const polyColor   = polyUsdc > 0 ? '#22c55e' : '#475569'
 
   return (
-    <main className="min-h-screen px-4 py-8 max-w-3xl mx-auto space-y-8">
+    <main className="min-h-screen px-3 sm:px-6 py-6 max-w-3xl mx-auto space-y-6">
 
-      {/* Nav */}
-      <div className="flex items-center justify-between">
+      {/* Nav — logo left, controls right */}
+      <div className="flex items-center justify-between gap-2">
         <button
           onClick={() => router.push('/')}
-          className="text-[#475569] hover:text-[#94a3b8] text-sm transition-colors font-mono"
+          className="text-[#475569] hover:text-[#94a3b8] text-sm transition-colors font-mono shrink-0"
         >
           ← scanner
         </button>
-        <div className="flex items-center gap-3">
-          <span className={`w-1.5 h-1.5 rounded-full ${status.running ? 'bg-[#22c55e] animate-pulse' : 'bg-[#475569]'}`} />
-          <span className="text-[#475569] text-xs font-mono">
-            {status.running ? 'agent running' : 'agent idle'}
-          </span>
-          <span className={`font-mono text-[10px] border rounded px-1.5 py-0.5 uppercase tracking-widest ${
-            status.live ? 'text-[#22c55e] border-[#22c55e]/30' : 'text-[#475569] border-[#334155]'
-          }`}>
-            mainnet
-          </span>
-        </div>
-      </div>
 
-      {/* Header + Start/Stop */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-mono text-xl font-bold text-[#f1f5f9] tracking-tight mb-1">
-            polyagent trades
-          </h1>
-          <p className="font-mono text-xs text-[#475569]">
-            {status.wallet} · max ${status.max_trade_usd}/trade · ${status.daily_limit_usd}/day
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right side: status + mode toggle + start/stop */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${status.running ? 'bg-[#22c55e] animate-pulse' : 'bg-[#475569]'}`} />
+            <span className="text-[#475569] text-xs font-mono hidden sm:inline">
+              {status.running ? 'agent running' : 'agent idle'}
+            </span>
+          </div>
+
+          {/* LIVE / PAPER toggle */}
           <button
             onClick={handleModeToggle}
             disabled={modeLoading}
-            className={`font-mono text-xs px-3 py-2 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+            title={status.live ? 'Click to switch to paper mode' : 'Click to switch to live trading'}
+            className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
               status.live
-                ? 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
-                : 'border-[#475569]/50 text-[#475569] hover:border-[#475569]'
+                ? 'border-[#22c55e] text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20'
+                : 'border-[#475569] text-[#475569] hover:border-[#94a3b8] hover:text-[#94a3b8]'
             }`}
           >
-            {modeLoading ? '...' : status.live ? 'live' : 'paper'}
+            {modeLoading ? '···' : status.live ? '● live' : '○ paper'}
           </button>
+
+          {/* Start / Stop */}
           <button
             onClick={handleAgentToggle}
             disabled={agentLoading}
-            className={`font-mono text-xs px-4 py-2 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+            className={`font-mono text-xs px-3 py-1.5 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
               status.running
                 ? 'border-[#ef4444]/50 text-[#ef4444] hover:border-[#ef4444]'
                 : 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
             }`}
           >
-            {agentLoading ? '...' : status.running ? 'stop agent' : 'start agent'}
+            {agentLoading ? '···' : status.running ? 'stop' : 'start'}
           </button>
         </div>
       </div>
 
-      {/* Wallet balance */}
+      {/* Header */}
+      <div>
+        <h1 className="font-mono text-lg sm:text-xl font-bold text-[#f1f5f9] tracking-tight mb-1">
+          polyagent trades
+        </h1>
+        <p className="font-mono text-xs text-[#475569]">
+          {status.wallet} · max ${status.max_trade_usd}/trade · ${status.daily_limit_usd}/day
+        </p>
+      </div>
+
+      {/* Wallet balance — Polygon prominently, others secondary */}
       <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1 min-w-0">
             <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase">
-              wallet · all chains
+              wallet · polygon (tradeable)
             </div>
             {balance.address ? (
               <a
                 href={`https://polygonscan.com/address/${balance.address}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono text-xs text-[#334155] hover:text-[#475569] transition-colors"
+                className="font-mono text-xs text-[#334155] hover:text-[#475569] transition-colors block truncate"
               >
                 {shortAddr(balance.address)} ↗
               </a>
@@ -214,49 +213,53 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
               <div className="font-mono text-xs text-[#334155]">—</div>
             )}
           </div>
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">
-              total USDC
+              USDC · polygon
             </div>
-            <div className="font-mono text-2xl font-bold" style={{ color: balanceColor }}>
-              {balance.total !== null ? `$${balance.total.toFixed(2)}` : '—'}
+            <div className="font-mono text-2xl sm:text-3xl font-bold" style={{ color: polyColor }}>
+              ${polyUsdc.toFixed(2)}
             </div>
+            {balance.usdc_e !== null && balance.usdc_e > 0 && (
+              <div className="font-mono text-[10px] text-[#475569] mt-0.5">
+                native ${balance.usdc?.toFixed(2)} · bridged ${balance.usdc_e?.toFixed(2)}
+              </div>
+            )}
+            {polyUsdc === 0 && balance.address && (
+              <div className="font-mono text-[10px] text-[#f97316] mt-0.5">
+                fund with USDC on Polygon to trade
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Per-chain breakdown */}
-        {balance.address && balance.chains && Object.keys(balance.chains).length > 0 && (
+        {/* Other chains — collapsed secondary info */}
+        {balance.chains && Object.keys(balance.chains).length > 0 && (
           <div className="grid grid-cols-3 gap-2 border-t border-[#1a1a2e] pt-3">
-            {(['polygon', 'ethereum', 'base'] as const).map(chain => {
-              const c = balance.chains[chain]
+            {(['ethereum', 'base', 'polygon'] as const).map(chain => {
+              const c = balance.chains?.[chain]
               if (!c) return null
-              const chainTotal = (c.usdc ?? 0) + (c.usdc_e ?? 0)
-              const explorerBase = chain === 'polygon'
-                ? 'https://polygonscan.com/address/'
+              const total = (c.usdc ?? 0) + (c.usdc_e ?? 0)
+              const explorer = chain === 'polygon'
+                ? `https://polygonscan.com/address/${balance.address}`
                 : chain === 'base'
-                ? 'https://basescan.org/address/'
-                : 'https://etherscan.io/address/'
+                ? `https://basescan.org/address/${balance.address}`
+                : `https://etherscan.io/address/${balance.address}`
+              const label = chain === 'ethereum' ? 'eth' : chain
               return (
                 <a
                   key={chain}
-                  href={`${explorerBase}${balance.address}`}
+                  href={explorer}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-[#111318] border border-[#1a1a2e] rounded p-2 hover:border-[#334155] transition-colors"
                 >
-                  <div className="font-mono text-[9px] text-[#334155] tracking-widest uppercase mb-1">
-                    {chain} ↗
+                  <div className="font-mono text-[9px] text-[#334155] tracking-widest uppercase mb-1">{label} ↗</div>
+                  <div className={`font-mono text-sm font-bold ${total > 0 ? 'text-[#f1f5f9]' : 'text-[#334155]'}`}>
+                    ${total.toFixed(2)}
                   </div>
-                  <div className={`font-mono text-sm font-bold ${chainTotal > 0 ? 'text-[#22c55e]' : 'text-[#475569]'}`}>
-                    ${chainTotal.toFixed(2)}
-                  </div>
-                  {c.usdc_e !== undefined && c.usdc_e > 0 && (
-                    <div className="font-mono text-[9px] text-[#334155] mt-0.5">
-                      +${c.usdc_e.toFixed(2)} bridged
-                    </div>
-                  )}
                   {c.native > 0 && (
-                    <div className="font-mono text-[9px] text-[#334155]">
+                    <div className="font-mono text-[9px] text-[#334155] mt-0.5">
                       {c.native.toFixed(4)} {c.native_symbol}
                     </div>
                   )}
@@ -273,24 +276,24 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
         )}
         {balance.error && balance.address !== null && (
           <div className="font-mono text-[10px] text-[#f97316] border-t border-[#1a1a2e] pt-3">
-            RPC partial error · {balance.error.slice(0, 120)}
+            RPC error · {balance.error.slice(0, 100)}
           </div>
         )}
       </div>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-3 sm:p-4">
           <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">Open</div>
-          <div className="font-mono text-2xl font-bold text-[#f1f5f9]">{openTrades.length}</div>
+          <div className="font-mono text-xl sm:text-2xl font-bold text-[#f1f5f9]">{openTrades.length}</div>
         </div>
-        <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-4">
+        <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-3 sm:p-4">
           <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">Deployed</div>
-          <div className="font-mono text-2xl font-bold text-[#f1f5f9]">${totalDeployed.toFixed(0)}</div>
+          <div className="font-mono text-xl sm:text-2xl font-bold text-[#f1f5f9]">${totalDeployed.toFixed(0)}</div>
         </div>
-        <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-4">
+        <div className="bg-[#111318] border border-[#1a1a2e] rounded-lg p-3 sm:p-4">
           <div className="font-mono text-[10px] text-[#475569] tracking-widest uppercase mb-1">Avg P&L</div>
-          <div className="font-mono text-2xl font-bold" style={{ color: pnlColor(avgPnl) }}>
+          <div className="font-mono text-xl sm:text-2xl font-bold" style={{ color: pnlColor(avgPnl) }}>
             {avgPnl !== null ? `${avgPnl > 0 ? '+' : ''}${avgPnl.toFixed(1)}%` : '—'}
           </div>
         </div>
@@ -311,24 +314,24 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           </button>
         </div>
 
-        <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-4 space-y-1.5 max-h-64 overflow-y-auto font-mono text-[11px]">
+        <div className="bg-[#0d0d10] border border-[#1a1a2e] rounded-lg p-3 sm:p-4 space-y-1.5 max-h-64 overflow-y-auto font-mono text-[10px] sm:text-[11px]">
           {logs.length === 0 ? (
             <div className="text-[#334155] text-center py-4">
               no activity yet — agent starts automatically on deploy
             </div>
           ) : (
             logs.map(log => (
-              <div key={log.id} className="flex items-start gap-2.5">
+              <div key={log.id} className="flex items-start gap-2 min-w-0">
                 <span className="text-[#334155] shrink-0">{formatTs(log.ts)}</span>
                 <span className="shrink-0 font-bold w-3 text-center" style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>
                   {LOG_ICONS[log.level] ?? '·'}
                 </span>
-                <span style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>{log.event}</span>
+                <span className="shrink-0" style={{ color: LOG_COLORS[log.level] ?? '#475569' }}>{log.event}</span>
                 {log.condition_id && (
-                  <span className="text-[#334155] shrink-0">{log.condition_id.slice(0, 10)}…</span>
+                  <span className="text-[#334155] shrink-0 hidden sm:inline">{log.condition_id.slice(0, 10)}…</span>
                 )}
                 {log.detail && (
-                  <span className="text-[#475569] truncate">{log.detail}</span>
+                  <span className="text-[#475569] truncate min-w-0">{log.detail}</span>
                 )}
               </div>
             ))
@@ -368,11 +371,12 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           <div className="font-mono text-[#475569] text-sm mb-2">no trades yet</div>
           <div className="font-mono text-[#334155] text-xs">
             {status.running
-              ? 'scanning geopolitics markets first — trades appear when strong signals pass the gate'
-              : 'agent auto-starts on deploy — or click start agent above'}
+              ? 'scanning geopolitics markets — trades appear when strong signals pass the gate'
+              : 'click start above to begin scanning'}
           </div>
         </div>
       )}
+
     </main>
   )
 }
