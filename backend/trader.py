@@ -1,12 +1,11 @@
 """
 trader.py — PolyAgent execution layer
 
-Live mode: set OWS_LIVE=true + PRIVATE_KEY in Railway env vars.
-  - Private key is imported into OWS vault on startup (never stored raw)
-  - Spending policy enforced by OWS before every signing operation
-  - Orders signed via OWS sign_typed_data (EIP-712)
+Live mode:  OWS_LIVE=true + PRIVATE_KEY set in Railway env vars.
+            Uses py-clob-client to sign and submit real orders to Polymarket CLOB.
+Paper mode: OWS_LIVE=false (default). Full loop with mock tx hash, no real USDC.
 
-Paper mode (default): full execution loop with mock tx hash, no real USDC moved.
+Runtime toggle: call set_live_mode(True/False) to switch without redeploying.
 """
 
 import hashlib
@@ -18,16 +17,23 @@ import requests
 
 import config
 
-# ── OWS import ────────────────────────────────────────────────────────────────
+# ── Runtime mode (overrides env var when set via API) ─────────────────────────
+_live_override: bool | None = None   # None = use config.OWS_LIVE
 
+def set_live_mode(live: bool):
+    global _live_override
+    _live_override = live
+
+def is_live() -> bool:
+    if _live_override is not None:
+        return _live_override
+    return config.OWS_LIVE
+
+# ── OWS import (optional) ─────────────────────────────────────────────────────
 try:
     from ows import (
-        import_wallet_private_key,
-        list_wallets,
-        get_wallet,
-        sign_typed_data,
-        sign_message,
-        create_policy,
+        import_wallet_private_key, list_wallets, get_wallet,
+        sign_typed_data, sign_message, create_policy,
     )
     _OWS_AVAILABLE = True
 except ImportError:
@@ -185,109 +191,44 @@ def build_clob_order(market: dict, side: str, size_usd: float) -> dict:
 
 def _sign_with_ows(order: dict) -> str:
     """
-    Sign a CLOB order via OWS policy-gated signing and submit to Polymarket.
-    OWS checks the spending policy before decrypting the key.
-    Falls back to paper mode hash if live signing fails.
+    Submit a live order to Polymarket CLOB using py-clob-client.
+    Falls back to paper mock hash if not live or if signing fails.
     """
-    if not (config.OWS_LIVE and config.PRIVATE_KEY and _OWS_AVAILABLE):
+    if not (is_live() and config.PRIVATE_KEY and _CLOB_AVAILABLE):
         return _mock_hash(order)
 
     try:
-        wallet_address = _ows_address()
-        if not wallet_address:
-            print("  [WARN] OWS wallet address unavailable — paper mode")
-            return _mock_hash(order)
-
-        # Convert token_id to int (Polymarket token IDs are large integers)
-        try:
-            token_id_int = int(order["token_id"])
-        except (ValueError, KeyError):
-            token_id_int = 0
-
-        # USDC amounts in micro-units (6 decimals)
-        maker_amount = int(order["size_usd"] * 1_000_000)
-        taker_amount = int(order["size"]     * 1_000_000)
-        salt         = random.randint(1, 2**128)
-
-        # EIP-712 typed data — OWS handles domain separation and hashing
-        typed_data = json.dumps({
-            "types": {
-                "EIP712Domain": [
-                    {"name": "name",              "type": "string"},
-                    {"name": "version",           "type": "string"},
-                    {"name": "chainId",           "type": "uint256"},
-                    {"name": "verifyingContract", "type": "address"},
-                ],
-                "Order": _ORDER_STRUCT,
-            },
-            "primaryType": "Order",
-            "domain": _POLY_DOMAIN,
-            "message": {
-                "salt":          salt,
-                "maker":         wallet_address,
-                "signer":        wallet_address,
-                "taker":         "0x0000000000000000000000000000000000000000",
-                "tokenId":       token_id_int,
-                "makerAmount":   maker_amount,
-                "takerAmount":   taker_amount,
-                "expiration":    0,
-                "nonce":         0,
-                "feeRateBps":    0,
-                "side":          0,  # BUY
-                "signatureType": 0,  # EOA
-            },
-        })
-
-        # OWS enforces spending policy before signing
-        sig_result = sign_typed_data(config.OWS_WALLET_NAME, "evm", typed_data)
-        signature  = sig_result.get("signature", "")
-
-        # Derive CLOB auth headers via OWS message signing
-        ts       = int(time.time())
-        auth_res = sign_message(config.OWS_WALLET_NAME, "evm", str(ts))
-        auth_sig = auth_res.get("signature", "")
-
-        headers = {
-            "Content-Type":   "application/json",
-            "POLY_ADDRESS":   wallet_address,
-            "POLY_SIGNATURE": auth_sig,
-            "POLY_TIMESTAMP": str(ts),
-            "POLY_NONCE":     "0",
-        }
-
-        clob_order = {
-            "salt":          str(salt),
-            "maker":         wallet_address,
-            "signer":        wallet_address,
-            "taker":         "0x0000000000000000000000000000000000000000",
-            "tokenId":       str(token_id_int),
-            "makerAmount":   str(maker_amount),
-            "takerAmount":   str(taker_amount),
-            "expiration":    "0",
-            "nonce":         "0",
-            "feeRateBps":    "0",
-            "side":          "0",
-            "signatureType": "0",
-            "signature":     signature,
-        }
-
-        resp = requests.post(
-            f"{config.API_BASE}/order",
-            json={"order": clob_order, "owner": wallet_address, "orderType": "GTC"},
-            headers=headers,
-            timeout=15,
+        pk = config.PRIVATE_KEY if config.PRIVATE_KEY.startswith("0x") else "0x" + config.PRIVATE_KEY
+        clob = ClobClient(
+            host="https://clob.polymarket.com",
+            key=pk,
+            chain_id=137,
+            signature_type=0,
         )
+        # Derive API credentials from private key
+        try:
+            creds = clob.create_or_derive_api_creds()
+            clob.set_api_creds(creds)
+        except Exception as e:
+            print(f"  [WARN] CLOB creds failed: {e}")
 
-        if resp.ok:
-            data = resp.json()
-            tx = data.get("transactionHash") or data.get("orderID")
-            return tx or _mock_hash(order)
-        else:
-            print(f"  [WARN] CLOB submit {resp.status_code}: {resp.text[:200]}")
-            return _mock_hash(order)
+        order_args = OrderArgs(
+            token_id=order["token_id"],
+            price=order["price"],
+            size=order["size"],
+            side="BUY",
+        )
+        signed = clob.create_order(order_args)
+        resp   = clob.post_order(signed, OrderType.GTC)
+        tx = (resp or {}).get("transactionHash") or (resp or {}).get("orderID")
+        if tx:
+            print(f"  [LIVE] Order submitted: {tx[:20]}...")
+            return tx
+        print(f"  [WARN] CLOB resp: {resp}")
+        return _mock_hash(order)
 
     except Exception as e:
-        print(f"  [WARN] OWS signing failed: {e} — paper mode")
+        print(f"  [WARN] Live signing failed: {e} — falling back to paper")
         return _mock_hash(order)
 
 
@@ -331,7 +272,7 @@ def execute_trade(result: dict) -> dict:
     order       = build_clob_order(market, side, size_usd)
     entry_price = order["price"]
 
-    is_paper = not (config.OWS_LIVE and bool(config.PRIVATE_KEY) and _OWS_AVAILABLE)
+    is_paper = not (is_live() and bool(config.PRIVATE_KEY) and _CLOB_AVAILABLE)
     tx_hash  = _sign_with_ows(order)
 
     executed_at = int(time.time())
@@ -359,7 +300,7 @@ def execute_trade(result: dict) -> dict:
     conn.commit()
     conn.close()
 
-    mode = "PAPER" if is_paper else "LIVE·OWS"
+    mode = "PAPER" if is_paper else "LIVE"
     print(
         f"  [TRADE:{mode}] {signal} {side} {result['condition_id'][:12]}... "
         f"entry={entry_price:.3f} size=${size_usd} tx={tx_hash[:18]}..."

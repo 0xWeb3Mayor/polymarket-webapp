@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Trade, AgentStatus, AgentLog, WalletBalance,
   closeTrade, getTrades, getAgentStatus,
-  startAgent, stopAgent, getAgentLogs, getWalletBalance,
+  startAgent, stopAgent, setAgentMode, getAgentLogs, getWalletBalance,
   pnlColor,
 } from '@/lib/api'
 import { TradeCard } from '@/components/TradeCard'
@@ -53,6 +53,7 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
   const [closing, setClosing] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [agentLoading, setAgentLoading] = useState(false)
+  const [modeLoading, setModeLoading] = useState(false)
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
@@ -78,6 +79,19 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
     const id = setInterval(refresh, 15_000)
     return () => clearInterval(id)
   }, [status.running, refresh])
+
+  const handleModeToggle = useCallback(async () => {
+    setModeLoading(true)
+    try {
+      await setAgentMode(!status.live)
+      const s = await getAgentStatus()
+      setStatus(s)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to toggle mode')
+    } finally {
+      setModeLoading(false)
+    }
+  }, [status.live])
 
   const handleAgentToggle = useCallback(async () => {
     setAgentLoading(true)
@@ -154,17 +168,30 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
             {status.wallet} · max ${status.max_trade_usd}/trade · ${status.daily_limit_usd}/day
           </p>
         </div>
-        <button
-          onClick={handleAgentToggle}
-          disabled={agentLoading}
-          className={`font-mono text-xs px-4 py-2 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 shrink-0 ${
-            status.running
-              ? 'border-[#ef4444]/50 text-[#ef4444] hover:border-[#ef4444]'
-              : 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
-          }`}
-        >
-          {agentLoading ? '...' : status.running ? 'stop agent' : 'start agent'}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleModeToggle}
+            disabled={modeLoading}
+            className={`font-mono text-xs px-3 py-2 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+              status.live
+                ? 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
+                : 'border-[#475569]/50 text-[#475569] hover:border-[#475569]'
+            }`}
+          >
+            {modeLoading ? '...' : status.live ? 'live' : 'paper'}
+          </button>
+          <button
+            onClick={handleAgentToggle}
+            disabled={agentLoading}
+            className={`font-mono text-xs px-4 py-2 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+              status.running
+                ? 'border-[#ef4444]/50 text-[#ef4444] hover:border-[#ef4444]'
+                : 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
+            }`}
+          >
+            {agentLoading ? '...' : status.running ? 'stop agent' : 'start agent'}
+          </button>
+        </div>
       </div>
 
       {/* Wallet balance */}

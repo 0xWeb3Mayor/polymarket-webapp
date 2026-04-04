@@ -364,11 +364,23 @@ async def stop_agent():
 async def agent_status():
     return {
         "running": _agent_task is not None and not _agent_task.done(),
-        "live": config.OWS_LIVE,
+        "live": trader.is_live(),
         "wallet": config.OWS_WALLET_NAME,
         "max_trade_usd": config.MAX_TRADE_USD,
         "daily_limit_usd": config.DAILY_LIMIT_USD,
     }
+
+
+class ModeRequest(BaseModel):
+    live: bool
+
+@app.post("/agent/mode")
+async def set_agent_mode(req: ModeRequest):
+    """Toggle between live and paper trading without redeploying."""
+    if req.live and not config.PRIVATE_KEY:
+        return {"error": "PRIVATE_KEY not set — cannot enable live mode"}
+    trader.set_live_mode(req.live)
+    return {"live": req.live, "status": "live trading enabled" if req.live else "paper mode enabled"}
 
 
 @app.post("/agent/run-once")

@@ -172,6 +172,15 @@ export async function stopAgent(): Promise<{ status: string }> {
   return res.json().catch(() => ({ status: 'stopped' }))
 }
 
+export async function setAgentMode(live: boolean): Promise<{ live: boolean; status: string }> {
+  const res = await fetch(`${API_URL}/agent/mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ live }),
+  })
+  return res.json()
+}
+
 export interface AgentLog {
   id: number
   ts: number
