@@ -262,13 +262,22 @@ def _enrich_trade(row: tuple) -> dict:
 
 @app.get("/trades")
 def get_trades():
-    """Last 50 trades with live P&L."""
+    """Last 50 trades. P&L enrichment is best-effort per trade."""
     conn = sqlite3.connect(config.DB_PATH)
     rows = conn.execute(
         f"SELECT {', '.join(_TRADE_COLS)} FROM trades ORDER BY executed_at DESC LIMIT 50"
     ).fetchall()
     conn.close()
-    return [_enrich_trade(r) for r in rows]
+    result = []
+    for row in rows:
+        t = dict(zip(_TRADE_COLS, row))
+        t["current_price"] = None
+        t["pnl_pct"] = None
+        t["polygonscan_url"] = (
+            f"https://polygonscan.com/tx/{t['tx_hash']}" if t.get("tx_hash") else None
+        )
+        result.append(t)
+    return result
 
 
 @app.get("/trades/{condition_id}")
