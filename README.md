@@ -1,4 +1,4 @@
-# Polymarket Scanner
+ Polymarket Scanner
 
 Paste a Polymarket URL. Get a zero-shot AI forecast and a structured analysis report — in seconds.
 

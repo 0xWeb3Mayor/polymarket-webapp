@@ -153,26 +153,23 @@ export async function closeTrade(conditionId: string): Promise<Trade> {
 }
 
 export async function getAgentStatus(): Promise<AgentStatus> {
-  // Try proxy first (client-side), fall back to direct (server-side)
-  const url = typeof window !== 'undefined'
-    ? '/api/agent/status'
-    : `${API_URL}/agent/status`
-  const res = await fetch(url, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/agent/status`, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to get agent status')
   return res.json()
 }
 
 export async function startAgent(): Promise<{ status: string }> {
-  const res = await fetch('/api/agent/start', { method: 'POST' })
-  const data = await res.json().catch(() => ({ status: 'error' }))
-  if (!res.ok) throw new Error(data.detail ?? 'Failed to start agent')
-  return data
+  const res = await fetch(`${API_URL}/agent/start`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? `Agent start failed (${res.status})`)
+  }
+  return res.json()
 }
 
 export async function stopAgent(): Promise<{ status: string }> {
-  const res = await fetch('/api/agent/stop', { method: 'POST' })
-  const data = await res.json().catch(() => ({ status: 'stopped' }))
-  return data
+  const res = await fetch(`${API_URL}/agent/stop`, { method: 'POST' })
+  return res.json().catch(() => ({ status: 'stopped' }))
 }
 
 export interface AgentLog {
@@ -194,19 +191,13 @@ export interface WalletBalance {
 }
 
 export async function getWalletBalance(): Promise<WalletBalance> {
-  const url = typeof window !== 'undefined'
-    ? '/api/wallet/balance'
-    : `${API_URL}/wallet/balance`
-  const res = await fetch(url, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/wallet/balance`, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to fetch wallet balance')
   return res.json()
 }
 
 export async function getAgentLogs(limit = 100): Promise<AgentLog[]> {
-  const url = typeof window !== 'undefined'
-    ? `/api/agent/logs?limit=${limit}`
-    : `${API_URL}/agent/logs?limit=${limit}`
-  const res = await fetch(url, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/agent/logs?limit=${limit}`, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to fetch agent logs')
   return res.json()
 }

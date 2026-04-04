@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
+    ],
+    "additionalDirectories": [
+      "/mnt/c/Users/hp/Downloads/polymarket-webapp/frontend/app/api/agent"
+    ]
+  }
+}
