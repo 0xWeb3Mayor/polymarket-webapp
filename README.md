@@ -1,21 +1,60 @@
- Polymarket Scanner
+# PolyAgent — Autonomous Prediction Market Trading Agent
 
-Paste a Polymarket URL. Get a zero-shot AI forecast and a structured analysis report — in seconds.
+An autonomous AI trading agent for [Polymarket](https://polymarket.com) powered by OWS policy-gated signing, TimesFM forecasting, and Claude AI analysis.
 
-**Live:** [scanner.polyweb.pro](https://scanner.polyweb.pro)
+**Live demo:** [polyagent trades dashboard](https://polymarket-webapp.vercel.app/trades)
+**Scanner:** [scanner.polyweb.pro](https://scanner.polyweb.pro)
+**GitHub:** [0xWeb3Mayor/polymarket-webapp](https://github.com/0xWeb3Mayor/polymarket-webapp)
 
 ---
 
 ## What it does
 
-You paste any Polymarket market URL. The app:
+PolyAgent scans every Polymarket prediction market every 15 minutes, finds mispricings using TimesFM price forecasting + Claude AI analysis, and executes trades autonomously — with OWS enforcing spending limits before every signing operation.
 
-1. **Parses the URL** — handles every Polymarket URL format: `/market/0x...`, `/event/slug/market-slug`, raw condition IDs, and share links with hash fragments
-2. **Fetches price history** — pulls hourly OHLC data from the Polymarket Gamma API (covers all market types: binary, categorical, political, AMM and CLOB)
-3. **Runs TimesFM** — Google's open-source zero-shot time series forecasting model predicts where the price is heading over the next 24, 48, or 72 hours, with an 80% confidence interval
-4. **Generates a signal** — compares the forecast to current market price and classifies it: STRONG BUY / BUY / HOLD / SELL / STRONG SELL
-5. **Writes an AI report** — Claude (Sonnet) reads the market question, current odds, volume, and the TimesFM forecast, then produces a structured breakdown: what the market asks, what resolves it, key factors, probability estimates, mispricing analysis, and a clear action (BUY YES / BUY NO / HOLD)
-6. **Renders a chart** — historical price line + dashed forecast projection with shaded confidence band
+The private key never exists in the app. It lives in the OWS vault. Every trade is policy-gated.
+
+---
+
+## OWS integration
+
+PolyAgent uses [Open Wallet Standard](https://github.com/open-wallet-standard/core) as its signing layer:
+
+```python
+from ows import (
+    import_wallet_private_key,  # stores key in encrypted vault on startup
+    create_policy,              # registers max_spend_per_tx + daily_limit
+    sign_typed_data,            # signs Polymarket CLOB EIP-712 orders
+    sign_message,               # derives CLOB auth headers
+)
+```
+
+**On startup:**
+1. `import_wallet_private_key("polyagent-treasury", PRIVATE_KEY)` — key enters OWS vault, never exposed again
+2. `create_policy({"max_spend_per_tx_usd": 50, "daily_limit_usd": 200, "allowed_chains": ["eip155:137"]})` — spending policy registered
+
+**On every trade:**
+3. `sign_typed_data(wallet, "evm", polymarket_eip712_order)` — OWS checks policy before decrypting key
+4. `sign_message(wallet, "evm", timestamp)` — derives Polymarket CLOB auth headers
+5. Order submitted to `clob.polymarket.com/order`
+
+See [`backend/trader.py`](backend/trader.py) for the full implementation.
+
+---
+
+## How it works
+
+1. **Fetch** — Gamma API pulls all active Polymarket markets (3,800+). Geopolitics markets (elections, wars, sanctions, treaties) are prioritized.
+2. **Forecast** — TimesFM (Google's zero-shot time series model) predicts price over the next 48 hours with an 80% confidence interval
+3. **Signal** — divergence ≥ 20% between forecast and current price → `STRONG_BUY` or `STRONG_SELL`
+4. **Gate** — 5-layer execution gate:
+   - Signal must be STRONG_BUY or STRONG_SELL
+   - Claude AI must not explicitly oppose the direction
+   - Market liquidity > $10,000
+   - No existing open position for this market
+   - OWS spending policy check before signing
+5. **Execute** — OWS signs the EIP-712 CLOB order, submits to Polymarket
+6. **Log** — every decision (signal, gate block, execution) logged to dashboard in real time
 
 ---
 
@@ -23,53 +62,13 @@ You paste any Polymarket market URL. The app:
 
 | Layer | Tech |
 |---|---|
-| Frontend | Next.js 15 (App Router), TypeScript, Tailwind CSS, Recharts |
+| Frontend | Next.js 15 (App Router), TypeScript, Tailwind CSS |
 | Backend | FastAPI (Python 3.11), SQLite |
-| Forecasting | [TimesFM 1.0 200M](https://github.com/google-research/timesfm) — PyTorch, CPU |
+| Signing | [Open Wallet Standard](https://github.com/open-wallet-standard/core) — policy-gated EVM signing |
+| Forecasting | [TimesFM 1.0 200M](https://github.com/google-research/timesfm) — zero-shot time series |
 | AI Analysis | Claude Sonnet (`claude-sonnet-4-6`) via Anthropic API |
 | Price Data | Polymarket Gamma API + CLOB API |
-| Deploy | Railway (backend) + Vercel (frontend) |
-
----
-
-## How the forecast works
-
-TimesFM is a **foundation model for time series** — trained by Google on a large corpus of real-world time series data. It does zero-shot forecasting: you feed it a sequence of historical prices and it predicts future values without any fine-tuning on Polymarket data.
-
-The model receives up to 30 days of hourly YES prices (0–1 scale) and outputs:
-- A point forecast at the chosen horizon (24h / 48h / 72h)
-- 0.1 and 0.9 quantiles — the 80% confidence interval
-
-The **divergence** between the forecast price and the current market price drives the signal:
-
-| Divergence | Signal |
-|---|---|
-| > +20% | STRONG BUY |
-| +10% to +20% | BUY |
-| -10% to +10% | HOLD |
-| -20% to -10% | SELL |
-| < -20% | STRONG SELL |
-
----
-
-## How the AI report works
-
-After TimesFM runs, Claude receives:
-- The market question and outcome being tracked
-- Close date, 24h volume, liquidity
-- Current Polymarket price (market-implied probability)
-- TimesFM forecast price and divergence
-
-Claude returns a structured JSON report with:
-- Plain-English summary of what the market resolves on
-- Exact resolution criteria (YES vs NO conditions)
-- 4 key factors that will determine the outcome
-- Its own probability estimate vs the current market price
-- Where it sees mispricing and why
-- A single action recommendation: `BUY YES`, `BUY NO`, `SELL YES`, `SELL NO`, or `HOLD`
-- 2–3 sentences of direct reasoning
-
-TimesFM provides the quantitative signal. Claude provides the qualitative reasoning. Neither is useful alone.
+| Deploy | Railway (backend, auto-starts agent) + Vercel (frontend) |
 
 ---
 
@@ -78,32 +77,32 @@ TimesFM provides the quantitative signal. Claude provides the qualitative reason
 ```
 polymarket-webapp/
 ├── backend/
-│   ├── main.py          # FastAPI app — 5 endpoints
-│   ├── parser.py        # URL parsing (all Polymarket formats)
-│   ├── fetch.py         # Price history (Gamma API primary, CLOB fallback)
+│   ├── main.py          # FastAPI — all endpoints + agent lifecycle
+│   ├── agent.py         # Autonomous scan loop (geo-priority, 15min interval)
+│   ├── trader.py        # OWS signing + gate logic + trade execution
+│   ├── fetch.py         # Gamma API market fetch + multi-chain wallet balance
 │   ├── forecast.py      # TimesFM inference
 │   ├── report.py        # Claude AI report generation
 │   ├── signals.py       # Divergence + signal classification
-│   ├── config.py        # Thresholds and constants
+│   ├── config.py        # All env vars and constants
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── app/
-│   │   ├── page.tsx             # Home — URL input
-│   │   ├── m/[id]/
-│   │   │   ├── page.tsx         # Server component — fetches market data
-│   │   │   ├── MarketView.tsx   # Client component — chart, signal, report
-│   │   │   └── layout.tsx       # OG meta tags per market
-│   │   └── api/og/[id]/route.tsx  # Edge OG image generation
+│   │   ├── page.tsx             # Home — URL scanner input
+│   │   ├── trades/
+│   │   │   ├── page.tsx         # Server component — fetches trades + agent state
+│   │   │   └── TradesView.tsx   # Client component — dashboard, logs, positions
+│   │   └── m/[id]/
+│   │       ├── page.tsx         # Market detail server component
+│   │       └── MarketView.tsx   # Chart, signal, AI report
 │   ├── components/
-│   │   ├── UrlInput.tsx         # Home page input + analyze button
-│   │   ├── SignalCard.tsx       # Signal badge + price display
-│   │   ├── ForecastChart.tsx    # Recharts chart (history + forecast + CI)
-│   │   ├── AIReport.tsx         # Structured AI analysis panel
-│   │   ├── HorizonToggle.tsx    # 24h / 48h / 72h selector
-│   │   └── ShareButton.tsx      # Copy link
+│   │   ├── TradeCard.tsx        # Trade position card with P&L
+│   │   ├── SignalCard.tsx       # Signal badge
+│   │   ├── ForecastChart.tsx    # Recharts history + forecast + CI band
+│   │   └── AIReport.tsx         # Structured Claude analysis panel
 │   └── lib/
-│       └── api.ts               # API client + types
+│       └── api.ts               # All API types and fetch helpers
 ├── railway.json
 └── vercel.json
 ```
@@ -114,11 +113,48 @@ polymarket-webapp/
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/analyze` | Parse URL → return condition_id |
-| `GET` | `/market/{id}?horizon=48` | Full forecast + AI report |
-| `GET` | `/market/{id}/refresh` | Force-refresh (clears cache) |
-| `GET` | `/recent` | Last 20 analyzed markets |
-| `GET` | `/health` | Health check |
+| `GET` | `/trades` | All trades with P&L |
+| `POST` | `/trades/{id}/close` | Close an open position via OWS |
+| `GET` | `/agent/status` | Running state, live mode, wallet config |
+| `POST` | `/agent/start` | Start autonomous loop |
+| `POST` | `/agent/stop` | Stop autonomous loop |
+| `GET` | `/agent/logs` | Live activity log |
+| `GET` | `/wallet/balance` | USDC balance across Polygon, Ethereum, Base |
+| `POST` | `/analyze` | Parse Polymarket URL → condition_id |
+| `GET` | `/market/{id}` | Forecast + AI report for any market |
+
+---
+
+## Environment variables
+
+| Variable | Where | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Railway | Claude API key |
+| `PRIVATE_KEY` | Railway | Wallet private key — imported into OWS vault on startup |
+| `OWS_WALLET_ADDRESS` | Railway | Wallet address for balance display |
+| `OWS_LIVE` | Railway | `true` = live trading, `false` = paper mode |
+| `MAX_TRADE_USD` | Railway | Max USDC per trade (default: 50) |
+| `DAILY_LIMIT_USD` | Railway | Daily spend limit enforced by OWS (default: 200) |
+| `NEXT_PUBLIC_API_URL` | Vercel | Railway backend URL |
+| `NEXT_PUBLIC_APP_URL` | Vercel | Vercel frontend URL |
+
+---
+
+## Agent activity (live)
+
+The agent is currently running on Railway mainnet. Recent decisions from the activity log:
+
+| Time | Signal | Market | Action |
+|---|---|---|---|
+| 13:46 | STRONG_BUY [GEO] | Will France send warships through Strait of Hormuz? | Executed BUY YES @ 0.042 |
+| 13:45 | STRONG_BUY [GEO] | Will Greece send warships through Strait of Hormuz? | Executed BUY YES @ 0.02 |
+| 13:45 | STRONG_BUY [GEO] | Will Iran sabotage undersea internet cables by April 30? | Executed BUY YES @ 0.05 |
+| 13:45 | STRONG_SELL [GEO] | Will Putin visit China by May 31? | Executed BUY NO @ 0.24 |
+| 13:45 | STRONG_BUY [GEO] | Will Russia capture Bilytske by June 30? | Executed BUY YES @ 0.21 |
+| 13:38 | STRONG_BUY [GEO] | Ukraine/Russia ceasefire market | Blocked — position already open |
+| 13:38 | STRONG_SELL [GEO] | div=-27.1% signal | Blocked — Claude opposes (action=SELL YES) |
+
+All positions: $50 size · OWS policy-gated · paper_trade=0 (live mode)
 
 ---
 
@@ -128,7 +164,7 @@ polymarket-webapp/
 ```bash
 cd backend
 pip install -r requirements.txt
-ANTHROPIC_API_KEY=sk-ant-... uvicorn main:app --reload
+ANTHROPIC_API_KEY=sk-ant-... OWS_LIVE=false uvicorn main:app --reload
 ```
 
 **Frontend**
@@ -137,15 +173,3 @@ cd frontend
 npm install
 NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 ```
-
----
-
-## Environment variables
-
-| Variable | Where | Required | Description |
-|---|---|---|---|
-| `ANTHROPIC_API_KEY` | Railway | Yes (for reports) | Claude API key |
-| `NEXT_PUBLIC_API_URL` | Vercel | Yes | Backend URL, e.g. `https://your-app.railway.app` |
-| `NEXT_PUBLIC_APP_URL` | Vercel | For OG images | Frontend URL, e.g. `https://scanner.polyweb.pro` |
-
-The AI report section is silently omitted if `ANTHROPIC_API_KEY` is missing — the forecast chart and signal still work.
