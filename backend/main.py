@@ -29,6 +29,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     fetch.init_db()
+    # Setup OWS wallet vault + spending policy
+    trader.setup_ows_wallet()
     # Auto-start agent — no manual intervention required
     global _agent_task
     import agent as agent_module

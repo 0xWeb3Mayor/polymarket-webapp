@@ -11,5 +11,4 @@ pytest>=7.4.0
 httpx>=0.26.0
 # PolyAgent trading deps
 py-clob-client>=0.17.0
-# open-wallet-standard is installed separately via: pip install open-wallet-standard
-# Not on PyPI — trader.py handles ImportError gracefully (paper trading fallback)
+open-wallet-standard>=1.2.0
