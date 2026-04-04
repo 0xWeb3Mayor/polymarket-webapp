@@ -4,14 +4,14 @@ import os
 API_BASE = "https://clob.polymarket.com"
 API_RATE_LIMIT_PER_MIN = 100
 
-# Market filters
-MIN_LIQUIDITY = 5_000       # USD
-MIN_HISTORY_DAYS = 3        # days of hourly data required
-MIN_VOLUME_24H = 500        # USD
-PRICE_MIN = 0.05
-PRICE_MAX = 0.95
-RESOLUTION_MIN_DAYS = 7     # market must resolve at least 7 days out
-RESOLUTION_MAX_DAYS = 90    # market must resolve within 90 days
+# Market filters — kept wide to scan everything on Polymarket
+MIN_LIQUIDITY = 1_000       # USD — low floor, catch emerging markets
+MIN_HISTORY_DAYS = 2        # days of price history required for TimesFM
+MIN_VOLUME_24H = 50         # USD — very low, we want coverage not just majors
+PRICE_MIN = 0.02            # 2¢ — include near-certain and near-impossible markets
+PRICE_MAX = 0.98            # 98¢
+RESOLUTION_MIN_DAYS = 1     # include markets resolving tomorrow
+RESOLUTION_MAX_DAYS = 730   # include 2-year geopolitics markets
 
 # Forecasting
 FORECAST_HORIZON_HOURS = 48
