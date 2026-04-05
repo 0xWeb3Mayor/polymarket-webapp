@@ -15,6 +15,7 @@ interface Props {
   agentStatus: AgentStatus
   initialLogs: AgentLog[]
   initialBalance: WalletBalance
+  readOnly?: boolean
 }
 
 const LOG_COLORS: Record<string, string> = {
@@ -44,7 +45,7 @@ function shortAddr(addr: string | null): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
 
-export default function TradesView({ initial, agentStatus: initialStatus, initialLogs, initialBalance }: Props) {
+export default function TradesView({ initial, agentStatus: initialStatus, initialLogs, initialBalance, readOnly = false }: Props) {
   const router = useRouter()
   const [trades, setTrades] = useState<Trade[]>(initial)
   const [status, setStatus] = useState<AgentStatus>(initialStatus)
@@ -145,7 +146,7 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           ← scanner
         </button>
 
-        {/* Right side: status + mode toggle + start/stop */}
+        {/* Right side: status + controls */}
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <div className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${status.running ? 'bg-[#22c55e] animate-pulse' : 'bg-[#475569]'}`} />
@@ -154,32 +155,44 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
             </span>
           </div>
 
-          {/* LIVE / PAPER toggle */}
-          <button
-            onClick={handleModeToggle}
-            disabled={modeLoading}
-            title={status.live ? 'Click to switch to paper mode' : 'Click to switch to live trading'}
-            className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+          {/* Mode badge — always visible, clickable only in dashboard */}
+          {readOnly ? (
+            <span className={`font-mono text-[10px] px-2.5 py-1 rounded border tracking-widest uppercase ${
               status.live
-                ? 'border-[#22c55e] text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20'
-                : 'border-[#475569] text-[#475569] hover:border-[#94a3b8] hover:text-[#94a3b8]'
-            }`}
-          >
-            {modeLoading ? '···' : status.live ? '● live' : '○ paper'}
-          </button>
+                ? 'border-[#22c55e] text-[#22c55e] bg-[#22c55e]/10'
+                : 'border-[#475569] text-[#475569]'
+            }`}>
+              {status.live ? '● live' : '○ paper'}
+            </span>
+          ) : (
+            <button
+              onClick={handleModeToggle}
+              disabled={modeLoading}
+              title={status.live ? 'Switch to paper mode' : 'Switch to live trading'}
+              className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+                status.live
+                  ? 'border-[#22c55e] text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20'
+                  : 'border-[#475569] text-[#475569] hover:border-[#94a3b8] hover:text-[#94a3b8]'
+              }`}
+            >
+              {modeLoading ? '···' : status.live ? '● live' : '○ paper'}
+            </button>
+          )}
 
-          {/* Start / Stop */}
-          <button
-            onClick={handleAgentToggle}
-            disabled={agentLoading}
-            className={`font-mono text-xs px-3 py-1.5 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
-              status.running
-                ? 'border-[#ef4444]/50 text-[#ef4444] hover:border-[#ef4444]'
-                : 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
-            }`}
-          >
-            {agentLoading ? '···' : status.running ? 'stop' : 'start'}
-          </button>
+          {/* Start/Stop — dashboard only */}
+          {!readOnly && (
+            <button
+              onClick={handleAgentToggle}
+              disabled={agentLoading}
+              className={`font-mono text-xs px-3 py-1.5 rounded border transition-colors tracking-widest uppercase disabled:opacity-40 ${
+                status.running
+                  ? 'border-[#ef4444]/50 text-[#ef4444] hover:border-[#ef4444]'
+                  : 'border-[#22c55e]/50 text-[#22c55e] hover:border-[#22c55e]'
+              }`}
+            >
+              {agentLoading ? '···' : status.running ? 'stop' : 'start'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -347,7 +360,7 @@ export default function TradesView({ initial, agentStatus: initialStatus, initia
           </div>
           {openTrades.map(trade => (
             <div key={trade.id} className={closing === trade.condition_id ? 'opacity-50 pointer-events-none' : ''}>
-              <TradeCard trade={trade} onClose={handleClose} />
+              <TradeCard trade={trade} onClose={readOnly ? undefined : handleClose} />
             </div>
           ))}
         </section>

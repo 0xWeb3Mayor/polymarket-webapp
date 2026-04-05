@@ -1,19 +1,22 @@
 import { getTrades, getAgentStatus, getAgentLogs, getWalletBalance } from '@/lib/api'
-import TradesView from './TradesView'
+import TradesView from '../trades/TradesView'
 
 export const metadata = {
-  title: 'PolyAgent Trades | Polymarket Scanner',
-  description: 'Autonomous prediction market trades executed by PolyAgent via OWS.',
+  title: 'PolyAgent Dashboard',
+  description: 'Agent control panel.',
 }
 
-export default async function TradesPage() {
+// Prevent search engines indexing the dashboard
+export const robots = { index: false, follow: false }
+
+export default async function DashboardPage() {
   const [trades, agentStatus, logs, balance] = await Promise.all([
     getTrades().catch(() => []),
     getAgentStatus().catch(() => ({
       running: false,
       live: false,
       wallet: 'polyagent-treasury',
-      max_trade_usd: 50,
+      max_trade_usd: 10,
       daily_limit_usd: 200,
     })),
     getAgentLogs(100).catch(() => []),
@@ -28,7 +31,7 @@ export default async function TradesPage() {
       agentStatus={agentStatus}
       initialLogs={logs}
       initialBalance={balance}
-      readOnly={true}
+      readOnly={false}
     />
   )
 }
